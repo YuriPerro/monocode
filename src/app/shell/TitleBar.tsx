@@ -941,13 +941,16 @@ function TitleBarComponent({
           </div>
         </>
       ) : null}
-      {!sessionSidebarOpen && !projectless && onToggleSessionSidebar ? (
+      {/* An open session sidebar already clears the traffic lights, so the
+          title bar only makes room for them once both panels are closed. */}
+      {!projectless && onToggleSessionSidebar ? (
         <div className="flex shrink-0 items-center px-1.5">
-          {IS_MAC && railClosed && !compactRail ? (
+          {IS_MAC && railClosed && !compactRail && !sessionSidebarOpen ? (
             <div className="w-[70px] shrink-0" />
           ) : null}
           <IconButton
             label={`Toggle Session Sidebar (${MOD}${SHIFT}B)`}
+            active={sessionSidebarOpen}
             onClick={onToggleSessionSidebar}
           >
             <DashboardSquare className="size-3.5" strokeWidth={1.75} />

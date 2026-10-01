@@ -96,9 +96,14 @@ describe("title tab response status", () => {
   });
 });
 
-it.each([true, false])(
-  "offers a separate session sidebar toggle when the project rail is %s",
-  (projectRailOpen) => {
+it.each([
+  [true, false],
+  [false, false],
+  [true, true],
+  [false, true],
+])(
+  "offers a separate session sidebar toggle when the project rail is %s and the session sidebar is %s",
+  (projectRailOpen, sessionSidebarOpen) => {
     const onToggleSidebar = vi.fn();
     const onToggleSessionSidebar = vi.fn();
     act(() =>
@@ -108,7 +113,7 @@ it.each([true, false])(
           activeId: "active",
           cwd: "/project",
           projectRailOpen,
-          sessionSidebarOpen: false,
+          sessionSidebarOpen,
           onToggleSidebar,
           onToggleSessionSidebar,
           onNew: vi.fn(),
@@ -124,6 +129,10 @@ it.each([true, false])(
       'button[aria-label^="Toggle Session Sidebar"]',
     );
     expect(toggle).not.toBeNull();
+    // The same button closes the sidebar it opened.
+    expect(toggle?.getAttribute("aria-pressed") === "true").toBe(
+      sessionSidebarOpen,
+    );
     act(() => toggle?.click());
     expect(onToggleSessionSidebar).toHaveBeenCalledOnce();
     expect(onToggleSidebar).not.toHaveBeenCalled();
