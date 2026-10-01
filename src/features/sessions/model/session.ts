@@ -280,6 +280,14 @@ export type BackgroundAgent = {
   startedAt: number;
   /** What it is doing now, when the provider reports it. */
   activity?: string;
+  /** Model the agent asked it to run on, when the call named one. */
+  model?: string;
+  /** Kind of subagent it is, such as `explore`. */
+  subagentType?: string;
+  /** Tokens it has used so far. */
+  tokens?: number;
+  /** Tool calls it has made so far. */
+  toolUses?: number;
 };
 
 /** Provider/model provenance captured when a user turn is submitted. */

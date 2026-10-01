@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { BackgroundAgent } from "../model/session";
 import { formatElapsed, useElapsedFrom } from "../hooks/useElapsedFrom";
+import { formatTokens } from "../model/contextUsage";
 import { Popover } from "../../../shared/ui/Popover";
 import { TerminalSpinner } from "./TerminalSpinner";
 
@@ -8,7 +9,8 @@ const MENU_WIDTH = 288;
 
 /**
  * How many subagents are running in the background, beside the composer's
- * mode picker. Opens to what each one is doing and how long it has run.
+ * mode picker. Opens to what each one is doing, how long it has run and what
+ * it has used so far.
  */
 export function BackgroundAgentsChip({
   agents,
@@ -65,27 +67,42 @@ export function BackgroundAgentsChip({
 
 function BackgroundAgentRow({ agent }: { agent: BackgroundAgent }) {
   const elapsed = formatElapsed(useElapsedFrom(agent.startedAt, false));
+  const kind = agent.model ?? agent.subagentType;
+  const usage = [
+    elapsed,
+    agent.tokens !== undefined ? `${formatTokens(agent.tokens)} tokens` : null,
+    agent.toolUses !== undefined
+      ? `${agent.toolUses} tool ${agent.toolUses === 1 ? "call" : "calls"}`
+      : null,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+  const meta = kind ? `${kind} · ${usage}` : usage;
   return (
-    <li className="flex items-start gap-2.5 rounded-lg px-2 py-2">
-      <span className="min-w-0 flex-1">
-        <span
-          className="block truncate text-[13px] text-content"
-          title={agent.description}
-        >
-          {agent.description}
+    <li className="rounded-lg px-2 py-2">
+      <span
+        className="block truncate text-[13px] text-content"
+        title={agent.description}
+      >
+        {agent.description}
+      </span>
+      <span
+        className="flex min-w-0 text-[11px] leading-4 tabular-nums text-content/45"
+        title={meta}
+      >
+        {kind ? <span className="truncate">{kind}</span> : null}
+        <span className="shrink-0 whitespace-pre">
+          {kind ? ` · ${usage}` : usage}
         </span>
-        {agent.activity ? (
-          <span
-            className="block truncate text-[11px] leading-4 text-content/45"
-            title={agent.activity}
-          >
-            {agent.activity}
-          </span>
-        ) : null}
       </span>
-      <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-content/45">
-        {elapsed}
-      </span>
+      {agent.activity ? (
+        <span
+          className="block truncate text-[11px] leading-4 text-content/45"
+          title={agent.activity}
+        >
+          {agent.activity}
+        </span>
+      ) : null}
     </li>
   );
 }

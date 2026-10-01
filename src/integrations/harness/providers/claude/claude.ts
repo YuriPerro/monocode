@@ -68,6 +68,7 @@ import {
   turnStatusFromResult,
   usageLimitFromRateLimitEvent,
   type ClaudeAgentTaskNotification,
+  type ClaudeAgentTaskProgress,
   type ClaudeCliSettings,
   type ClaudeControlRequest,
 } from "./claudeProtocol";
@@ -122,6 +123,11 @@ type LiveAgentTask = {
   startedAt: number;
   /** Latest progress Claude reported for it. */
   activity?: string;
+  /** The `model` override on the Agent call that spawned it. */
+  model?: string;
+  subagentType?: string;
+  tokens?: number;
+  toolUses?: number;
 };
 
 type BackgroundTask = {
@@ -1220,12 +1226,13 @@ function handleAgentLifecycle(
     // The task list often names the task first; it started back then.
     const listed = live.agentTasks.get(started.taskId);
     live.agentTasks.set(started.taskId, {
+      ...listed,
+      ...agentCallDetails(live, started.toolUseId),
       taskId: started.taskId,
       toolUseId: started.toolUseId,
       description: started.description,
       backgrounded: started.backgrounded,
       startedAt: listed?.startedAt ?? Date.now(),
-      ...(listed?.activity ? { activity: listed.activity } : {}),
     });
     upsertAgentTool(
       live,
@@ -1239,8 +1246,7 @@ function handleAgentLifecycle(
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
-    const activity = progress.summary || progress.lastToolName;
-    if (task && activity) task.activity = activity;
+    if (task) noteAgentProgress(task, progress);
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1325,6 +1331,7 @@ function handleAgentLifecycle(
     // find the Agent call that spawned it rather than opening a second row.
     const toolUseId = unclaimedAgentCall(live, row.description);
     live.agentTasks.set(row.taskId, {
+      ...agentCallDetails(live, toolUseId),
       taskId: row.taskId,
       toolUseId,
       description: row.description,
@@ -1482,6 +1489,37 @@ function noteSubagentResults(
       status: result.isError ? "failed" : "completed",
       ...(result.isError && result.text ? { detail: result.text } : {}),
     });
+  }
+}
+
+/**
+ * What the Agent call that spawned a task asked for. Task events never name
+ * the model, so it is only known when the call overrode it.
+ */
+function agentCallDetails(
+  live: Live,
+  toolUseId: string | undefined,
+): Pick<LiveAgentTask, "model" | "subagentType"> {
+  const input = toolUseId ? live.toolsById.get(toolUseId)?.input : undefined;
+  const model = stringField(input, "model");
+  const subagentType = stringField(input, "subagent_type");
+  return {
+    ...(model ? { model } : {}),
+    ...(subagentType ? { subagentType } : {}),
+  };
+}
+
+function noteAgentProgress(
+  task: LiveAgentTask,
+  progress: ClaudeAgentTaskProgress,
+): void {
+  const activity = progress.summary || progress.lastToolName;
+  if (activity) task.activity = activity;
+  if (progress.subagentType) task.subagentType = progress.subagentType;
+  if (progress.totalTokens !== undefined) task.tokens = progress.totalTokens;
+  if (progress.toolUses !== undefined) task.toolUses = progress.toolUses;
+  if (progress.durationMs !== undefined) {
+    task.startedAt = Math.min(task.startedAt, Date.now() - progress.durationMs);
   }
 }
 
@@ -1725,6 +1763,10 @@ function syncBackgroundAgents(live: Live): void {
       description: task.description,
       startedAt: task.startedAt,
       ...(task.activity ? { activity: task.activity } : {}),
+      ...(task.model ? { model: task.model } : {}),
+      ...(task.subagentType ? { subagentType: task.subagentType } : {}),
+      ...(task.tokens !== undefined ? { tokens: task.tokens } : {}),
+      ...(task.toolUses !== undefined ? { toolUses: task.toolUses } : {}),
     }));
   const key = agents.length > 0 ? JSON.stringify(agents) : "";
   if (key === live.backgroundAgentsKey) return;

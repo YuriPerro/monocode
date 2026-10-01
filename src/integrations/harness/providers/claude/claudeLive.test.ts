@@ -1873,6 +1873,7 @@ describe("claude background agents", () => {
         id: "t1",
         description: "Explore the auth module",
         startedAt: 1_000,
+        subagentType: "explore",
       };
       expect(backgroundAgentUpdates(events)).toEqual([[agent]]);
 
@@ -1931,6 +1932,110 @@ describe("claude background agents", () => {
         newSession("claude", "/repo"),
       );
       expect(session.backgroundAgents).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("carries the model the call asked for and what the subagent has used", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    try {
+      const { events, turn } = await startTurn("s1");
+      emit({
+        type: "assistant",
+        session_id: "sess_1",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              id: "toolu_fast",
+              name: "Agent",
+              input: {
+                description: "Scan the logs",
+                model: "haiku",
+                run_in_background: true,
+              },
+            },
+            {
+              type: "tool_use",
+              id: "toolu_plain",
+              name: "Agent",
+              input: {
+                description: "Review the tests",
+                run_in_background: true,
+              },
+            },
+          ],
+        },
+      });
+      for (const [taskId, toolUseId, description] of [
+        ["t1", "toolu_fast", "Scan the logs"],
+        ["t2", "toolu_plain", "Review the tests"],
+      ]) {
+        emit({
+          type: "system",
+          subtype: "task_started",
+          task_id: taskId,
+          tool_use_id: toolUseId,
+          description,
+          task_type: "local_agent",
+          is_backgrounded: true,
+        });
+      }
+      const fast = { id: "t1", description: "Scan the logs", model: "haiku" };
+      const plain = { id: "t2", description: "Review the tests" };
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([
+        { ...fast, startedAt: 10_000 },
+        { ...plain, startedAt: 10_000 },
+      ]);
+
+      clock.mockReturnValue(16_000);
+      emit({
+        type: "system",
+        subtype: "task_progress",
+        task_id: "t1",
+        description: "Scan the logs",
+        last_tool_name: "Grep",
+        usage: { total_tokens: 12_400, tool_uses: 3, duration_ms: 8_000 },
+      });
+      emit({
+        type: "system",
+        subtype: "task_progress",
+        task_id: "t2",
+        description: "Review the tests",
+        subagent_type: "code-reviewer",
+        usage: { total_tokens: 900, tool_uses: 0, duration_ms: 2_000 },
+      });
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([
+        {
+          ...fast,
+          startedAt: 8_000,
+          activity: "Grep",
+          tokens: 12_400,
+          toolUses: 3,
+        },
+        {
+          ...plain,
+          startedAt: 10_000,
+          subagentType: "code-reviewer",
+          tokens: 900,
+          toolUses: 0,
+        },
+      ]);
+
+      for (const taskId of ["t1", "t2"]) {
+        emit({
+          type: "system",
+          subtype: "task_notification",
+          task_id: taskId,
+          status: "completed",
+          summary: "Done",
+        });
+      }
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([]);
+      emit({ type: "result", subtype: "success", session_id: "sess_1" });
+      emitFollowUpTurn("Both finished.");
+      await turn;
     } finally {
       clock.mockRestore();
     }

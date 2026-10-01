@@ -971,6 +971,43 @@ describe("subagent messages", () => {
       subagentType: "explore",
     });
   });
+
+  it("reads what a subagent has used so far from task progress", () => {
+    const progress = {
+      type: "system",
+      subtype: "task_progress",
+      task_id: "t1",
+      description: "Explore the auth module",
+    };
+    expect(
+      parseTaskProgress({
+        ...progress,
+        subagent_type: "explore",
+        usage: { total_tokens: 12_400, tool_uses: 7, duration_ms: 42_000 },
+      }),
+    ).toEqual({
+      taskId: "t1",
+      toolUseId: undefined,
+      description: "Explore the auth module",
+      subagentType: "explore",
+      lastToolName: undefined,
+      summary: undefined,
+      totalTokens: 12_400,
+      toolUses: 7,
+      durationMs: 42_000,
+    });
+    const partial = parseTaskProgress({
+      ...progress,
+      usage: { total_tokens: "lots", tool_uses: -1, duration_ms: 0 },
+    });
+    expect(partial).toMatchObject({ durationMs: 0 });
+    expect(partial).not.toHaveProperty("totalTokens");
+    expect(partial).not.toHaveProperty("toolUses");
+    const bare = parseTaskProgress(progress);
+    expect(bare).not.toHaveProperty("totalTokens");
+    expect(bare).not.toHaveProperty("toolUses");
+    expect(bare).not.toHaveProperty("durationMs");
+  });
 });
 
 describe("applyClaudeTaskTool", () => {
