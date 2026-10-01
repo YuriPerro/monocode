@@ -147,13 +147,31 @@ export function zzzLeft(x: number, trackWidth: number): number {
   return Math.max(0, Math.min(start, trackWidth - ZZZ_REACH));
 }
 
-type Rect = {
+export type Rect = {
   left: number;
   right: number;
   top: number;
   bottom: number;
   width?: number;
 };
+
+/**
+ * `rect` from the top-left of `origin`, the layer the mascot is drawn in.
+ * Whatever moves both together, such as a panel slide, a transform, or a
+ * scroll, leaves the result unchanged.
+ */
+export function rectWithin(
+  rect: Rect,
+  origin: { left: number; top: number },
+): Rect {
+  return {
+    left: rect.left - origin.left,
+    right: rect.right - origin.left,
+    top: rect.top - origin.top,
+    bottom: rect.bottom - origin.top,
+    width: rect.width ?? rect.right - rect.left,
+  };
+}
 
 export type Obstacle = {
   /** Left edge of the hurdle, in box coordinates. */

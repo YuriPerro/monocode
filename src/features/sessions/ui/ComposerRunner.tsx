@@ -1,5 +1,4 @@
 import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
-import { createPortal } from "react-dom";
 import {
   ALERT_GAP,
   ALERT_PATH,
@@ -29,6 +28,7 @@ import {
   RUNNER_SIZE,
   poseAt,
   recoilAlong,
+  rectWithin,
   scaleTrackX,
   sleepAlong,
   stepAlong,
@@ -41,6 +41,7 @@ import {
   QUIET_RUNNER_SIGNAL,
   type Coin,
   type Obstacle,
+  type Rect,
   type RunnerPhase,
   type RunnerSignal,
   type RunnerTrack,
@@ -75,6 +76,9 @@ const GEOMETRY_SAMPLE_MS = 100;
 /**
  * Project pixel mascot on the composer's top ledge. Between turns it sleeps in
  * a corner on CSS animation alone; the frame loop runs only while it is awake.
+ * It is drawn inside the composer and placed from its own layer's corner, so
+ * whatever moves the composer without resizing it (a panel slide, the dock
+ * motion, a scroll) carries the mascot along.
  */
 export function ComposerRunner({
   boxRef,
@@ -140,7 +144,7 @@ export function ComposerRunner({
     let geometryBox: HTMLElement | null = null;
     let cachedTrack: RunnerTrack | null = null;
     let cachedObstacle: Obstacle | null = null;
-    let cachedAction: DOMRect | null = null;
+    let cachedAction: Rect | null = null;
     const coins: LiveCoin[] = [];
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -288,9 +292,12 @@ export function ComposerRunner({
         const review = shell?.querySelector("[data-session-review]");
         const queue = shell?.querySelector("[data-message-queue-card]");
         const ledge = review ?? queue;
+        const origin = layer.getBoundingClientRect();
+        const within = (el: Element | null | undefined) =>
+          el ? rectWithin(el.getBoundingClientRect(), origin) : null;
         cachedTrack = runnerTrack(
-          box.getBoundingClientRect(),
-          ledge?.getBoundingClientRect() ?? null,
+          rectWithin(box.getBoundingClientRect(), origin),
+          within(ledge),
         );
         const pane = box.closest("[data-session-drop]");
         const button = pane?.querySelector("[data-jump-to-bottom]");
@@ -302,12 +309,9 @@ export function ComposerRunner({
             bottom: cachedTrack.top + 8,
             width: cachedTrack.width,
           },
-          button?.getBoundingClientRect() ?? null,
+          within(button),
         );
-        cachedAction =
-          box
-            .querySelector("[data-composer-action]")
-            ?.getBoundingClientRect() ?? null;
+        cachedAction = within(box.querySelector("[data-composer-action]"));
         geometryBox = box;
         geometryAt = now;
       }
@@ -614,11 +618,11 @@ export function ComposerRunner({
     if (busy) wakeRef.current();
   }, [busy]);
 
-  return createPortal(
+  return (
     <div
       ref={layerRef}
       aria-hidden
-      className="pointer-events-none fixed inset-0 z-40 overflow-visible"
+      className="pointer-events-none absolute inset-0 z-40 overflow-visible"
       style={{ visibility: "hidden" }}
     >
       <div ref={coinsRef} className="absolute inset-0" />
@@ -685,7 +689,6 @@ export function ComposerRunner({
           <path d={ALERT_PATH} />
         </svg>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

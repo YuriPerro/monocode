@@ -27,6 +27,7 @@ import {
   pingPong,
   poseAt,
   recoilAlong,
+  rectWithin,
   runnerPose,
   runnerTrack,
   scaleTrackX,
@@ -443,6 +444,20 @@ describe("composerRunner", () => {
         width: 384,
       }),
     ).toEqual({ left: 108, top: 168, width: 384 });
+  });
+
+  it("measures the track from the mascot's layer, so moving both keeps it in place", () => {
+    const layer = { left: 80, top: 150 };
+    const track = runnerTrack(rectWithin(BOX, layer), null);
+    expect(track).toEqual({ left: 20, top: 50, width: 400 });
+
+    const slid = { ...BOX, left: BOX.left + 240, right: BOX.right + 240 };
+    expect(
+      runnerTrack(rectWithin(slid, { ...layer, left: layer.left + 240 }), null),
+    ).toEqual(track);
+
+    const unsized = { left: 100, right: 500, top: 200, bottom: 320 };
+    expect(rectWithin(unsized, layer)).toEqual(rectWithin(BOX, layer));
   });
 
   it("keeps relative position when the track width changes", () => {
