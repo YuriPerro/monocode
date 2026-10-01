@@ -141,7 +141,11 @@ describe("agent app commands", () => {
         { sessionId: "other", prompt: "Continue the review" },
         host,
       ),
-    ).toMatchObject({ sessionId: "other", submitted: true });
+    ).toMatchObject({
+      sessionId: "other",
+      submitted: true,
+      requestId: "send-1",
+    });
     expect(host.send).toHaveBeenCalledWith(
       "other",
       "Continue the review",
@@ -166,6 +170,97 @@ describe("agent app commands", () => {
       ),
     ).rejects.toThrow("not found in this project");
     expect(host.send).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for the turn a send submitted and returns its reply", async () => {
+    vi.useFakeTimers();
+    try {
+      const { source, host } = fixture();
+      const other = { ...newSession("codex", source.cwd), id: "other" };
+      other.blocks = [
+        { id: "u1", role: "user", text: "Earlier question" },
+        { id: "a1", role: "assistant", text: "Earlier answer" },
+      ];
+      host.session = vi.fn(async (id) => (id === "other" ? other : null));
+      const waiting = handleAgentApp(
+        source,
+        "wait-1",
+        "sessions.wait",
+        { sessionId: "other", sentRequestId: "send-1", timeoutSeconds: 5 },
+        host,
+      );
+      await vi.advanceTimersByTimeAsync(600);
+      other.busy = true;
+      other.blocks = [
+        ...other.blocks,
+        {
+          id: "u2",
+          role: "user",
+          text: "What are you doing?",
+          appRequestId: "app-lead-send-1",
+        },
+      ];
+      await vi.advanceTimersByTimeAsync(600);
+      other.busy = false;
+      other.blocks = [
+        ...other.blocks,
+        { id: "a2", role: "assistant", text: "Waiting for a task." },
+      ];
+      await vi.advanceTimersByTimeAsync(600);
+      expect(await waiting).toMatchObject({
+        sessionId: "other",
+        settled: true,
+        busy: false,
+        turn: {
+          turnId: "u2",
+          user: { text: "What are you doing?" },
+          assistant: { text: "Waiting for a task." },
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns unsettled when the waited turn outlasts the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { source, host } = fixture();
+      const other = {
+        ...newSession("codex", source.cwd),
+        id: "other",
+        busy: true,
+      };
+      host.session = vi.fn(async (id) => (id === "other" ? other : null));
+      const waiting = handleAgentApp(
+        source,
+        "wait-2",
+        "sessions.wait",
+        { sessionId: "other", timeoutSeconds: 1 },
+        host,
+      );
+      await vi.advanceTimersByTimeAsync(1_500);
+      expect(await waiting).toMatchObject({
+        settled: false,
+        busy: true,
+        turn: null,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects waits on itself, outside the project or past the cap", async () => {
+    const { source, host } = fixture();
+    for (const [input, message] of [
+      [{ sessionId: "lead" }, "its own turn"],
+      [{ sessionId: "missing" }, "not found in this project"],
+      [{ sessionId: "other", timeoutSeconds: 26 }, "from 1 to 25"],
+      [{ sessionId: "other", sentRequestId: "bad id" }, "sentRequestId"],
+    ] as const)
+      await expect(
+        handleAgentApp(source, "wait-x", "sessions.wait", input, host),
+      ).rejects.toThrow(message);
   });
 
   it("saves an unsent draft in another listed project session", async () => {
