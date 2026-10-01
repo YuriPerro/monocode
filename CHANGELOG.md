@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The default Claude account no longer inherits `CLAUDE_CONFIG_DIR` or `CLAUDE_SECURESTORAGE_CONFIG_DIR` from a terminal that launched MonoCode, which could send its sign-in and turns to another profile.
+- Usage for the default Claude account reads whichever stored sign-in was refreshed last, so a `claude` wrapper or shell that sets `CLAUDE_CONFIG_DIR=~/.claude` no longer shows the account as expired.
+
 ## [0.7.0] - 2026-10-02
 
 ### Added
