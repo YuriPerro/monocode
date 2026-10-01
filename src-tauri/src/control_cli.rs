@@ -116,7 +116,8 @@ Actions:
                   The result's requestId identifies the submitted turn.
   sessions.wait  {"sessionId":"...","sentRequestId":"<requestId>",
                   "timeoutSeconds":20,"maxChars":1200}
-                  Wait up to timeoutSeconds (1-25) for the turn sent with that
+                  Wait up to timeoutSeconds (1-25) for the turn that
+                  sessions.send or sessions.start submitted with that
                   requestId to finish, then return its exchange. Omit
                   sentRequestId to wait for the session to go idle and get its
                   newest exchange. settled:false means it is still working;
