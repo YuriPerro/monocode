@@ -1,0 +1,512 @@
+/*
+ * Ultracode and Ultrathink, Claude's effort levels above Max. The chip rests
+ * in the level's colors; picking one plays a one-shot charm: a violet
+ * scanline that sheds code glyphs, or a rainbow ripple with sparkles.
+ */
+:where([data-ultra-effort], [data-ultra-effort-option], .ultra-burst) {
+  --ultracode: #a855f7;
+  --ultracode-text: #c08cff;
+  --ultracode-core: #f3e8ff;
+  --ultracode-glow: rgb(168 85 247 / 0.85);
+  --ultracode-rest-glow: 0.7;
+  --ultrathink-0: #ff6b8b;
+  --ultrathink-1: #ffa45c;
+  --ultrathink-2: #ffd75e;
+  --ultrathink-3: #7ee08a;
+  --ultrathink-4: #5cc8ff;
+  --ultrathink-5: #8f86ff;
+  --ultrathink-6: #d77bff;
+  --ultrathink-rest-edge: 0.3;
+  /* Two passes of the spectrum, so a slide by whole passes ends where it began. */
+  --ultrathink-text: linear-gradient(
+    90deg,
+    var(--ultrathink-0) 0%,
+    var(--ultrathink-1) 7.14%,
+    var(--ultrathink-2) 14.29%,
+    var(--ultrathink-3) 21.43%,
+    var(--ultrathink-4) 28.57%,
+    var(--ultrathink-5) 35.71%,
+    var(--ultrathink-6) 42.86%,
+    var(--ultrathink-0) 50%,
+    var(--ultrathink-1) 57.14%,
+    var(--ultrathink-2) 64.29%,
+    var(--ultrathink-3) 71.43%,
+    var(--ultrathink-4) 78.57%,
+    var(--ultrathink-5) 85.71%,
+    var(--ultrathink-6) 92.86%,
+    var(--ultrathink-0) 100%
+  );
+  --ultrathink-ring: conic-gradient(
+    from 210deg,
+    var(--ultrathink-0),
+    var(--ultrathink-1),
+    var(--ultrathink-2),
+    var(--ultrathink-3),
+    var(--ultrathink-4),
+    var(--ultrathink-5),
+    var(--ultrathink-6),
+    var(--ultrathink-0)
+  );
+}
+
+html.theme-light
+  :where([data-ultra-effort], [data-ultra-effort-option], .ultra-burst) {
+  --ultracode: #9333ea;
+  --ultracode-text: #7e22ce;
+  --ultracode-core: #a855f7;
+  --ultracode-glow: rgb(147 51 234 / 0.5);
+  --ultracode-rest-glow: 0.6;
+  --ultrathink-0: #e11d48;
+  --ultrathink-1: #ea580c;
+  --ultrathink-2: #ca8a04;
+  --ultrathink-3: #16a34a;
+  --ultrathink-4: #0284c7;
+  --ultrathink-5: #4f46e5;
+  --ultrathink-6: #a21caf;
+  --ultrathink-rest-edge: 0.45;
+}
+
+[data-ultra-effort],
+[data-ultra-effort-option] {
+  position: relative;
+}
+
+[data-ultra-effort]::after,
+[data-ultra-effort-option]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+[data-ultra-effort-option]::after {
+  transition: opacity 160ms var(--motion-ease-out);
+}
+
+.ultra-effort-gradient {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Ultracode at rest: violet ink, a violet tint, and a soft edge glow. */
+[data-ultra-effort="ultracode"] {
+  background-color: color-mix(
+    in srgb,
+    var(--ultracode) 9%,
+    var(--color-selection)
+  );
+}
+
+[data-ultra-effort="ultracode"]:hover:not([aria-expanded="true"]) {
+  background-color: color-mix(
+    in srgb,
+    var(--ultracode) 13%,
+    var(--color-selection-hover)
+  );
+}
+
+[data-ultra-effort="ultracode"] .ultra-effort-label,
+[data-ultra-effort="ultracode"] .ultra-effort-icon {
+  color: var(--ultracode-text);
+}
+
+[data-ultra-effort="ultracode"] .ultra-effort-chevron {
+  color: color-mix(in srgb, var(--ultracode-text) 60%, transparent);
+}
+
+[data-ultra-effort="ultracode"]::after {
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--ultracode) 38%, transparent),
+    0 0 10px -1px color-mix(in srgb, var(--ultracode) 45%, transparent);
+  opacity: var(--ultracode-rest-glow);
+}
+
+[data-ultra-effort="ultracode"][data-ultra-charm]::after {
+  animation: ultracode-breath var(--ultracode-breath-ms) ease-in-out
+    var(--ultracode-breath-delay) var(--ultracode-breath-cycles);
+}
+
+@keyframes ultracode-breath {
+  0%,
+  100% {
+    opacity: var(--ultracode-rest-glow);
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Ultrathink at rest: a rainbow label and gauge inside a faint rainbow edge. */
+[data-ultra-effort="ultrathink"] .ultra-effort-label,
+[data-ultra-effort-option="ultrathink"][data-highlighted] .ultra-effort-label {
+  background-image: var(--ultrathink-text);
+  background-size: 200% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+
+[data-ultra-effort="ultrathink"][data-ultra-charm] .ultra-effort-label {
+  animation: ultrathink-flow var(--ultrathink-flow-ms)
+    cubic-bezier(0.35, 0, 0.25, 1) 1;
+}
+
+@keyframes ultrathink-flow {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: var(--ultrathink-flow-end) 50%;
+  }
+}
+
+/* Hugeicons stroke every child with currentColor, so paint the children. */
+[data-ultra-effort="ultrathink"] .ultra-effort-icon > * {
+  stroke: var(--ultra-gauge-stroke);
+}
+
+[data-ultra-effort="ultrathink"]::after,
+[data-ultra-effort-option="ultrathink"]::after,
+.ultrathink-ring {
+  background: var(--ultrathink-ring);
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+[data-ultra-effort="ultrathink"]::after,
+[data-ultra-effort-option="ultrathink"]::after {
+  padding: 1px;
+}
+
+[data-ultra-effort="ultrathink"]::after {
+  opacity: var(--ultrathink-rest-edge);
+}
+
+/* Menu rows preview their level's color while highlighted. */
+[data-ultra-effort-option="ultracode"]::after {
+  box-shadow:
+    inset 0 0 12px 0 color-mix(in srgb, var(--ultracode) 30%, transparent),
+    inset 0 0 0 1px color-mix(in srgb, var(--ultracode) 26%, transparent);
+}
+
+[data-ultra-effort-option="ultracode"][data-highlighted] .ultra-effort-label {
+  color: var(--ultracode-text);
+}
+
+[data-ultra-effort-option="ultracode"][data-highlighted]::after {
+  opacity: 1;
+}
+
+[data-ultra-effort-option="ultrathink"][data-highlighted]::after {
+  opacity: 0.45;
+}
+
+.ultra-burst {
+  position: fixed;
+  pointer-events: none;
+}
+
+.ultra-burst span {
+  display: block;
+}
+
+/* Ultracode: a scanline crosses the chip, shedding code glyphs and pixels. */
+.ultracode-clip {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--radius-md, 0.375rem);
+}
+
+.ultracode-sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--ultracode) 0%, transparent) 30%,
+    color-mix(in srgb, var(--ultracode) 22%, transparent) 80%,
+    color-mix(in srgb, var(--ultracode) 60%, transparent) 96%,
+    var(--ultracode-core) 98.5%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: ultracode-sweep var(--duration) var(--ease) 1 both;
+}
+
+@keyframes ultracode-sweep {
+  0% {
+    transform: translateX(-100%);
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(var(--end));
+    opacity: 0;
+  }
+}
+
+.ultracode-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-md, 0.375rem);
+  box-shadow: 0 0 18px 2px color-mix(in srgb, var(--ultracode) 50%, transparent);
+  opacity: 0;
+  animation: ultracode-glow var(--duration) var(--motion-ease-out) var(--delay)
+    1 both;
+}
+
+@keyframes ultracode-glow {
+  0% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.03);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.06);
+  }
+}
+
+.ultracode-mote {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  animation: ultracode-rise var(--duration) var(--ease) var(--delay) 1 both;
+}
+
+@keyframes ultracode-rise {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--dx), var(--dy));
+  }
+}
+
+.ultracode-glyph {
+  color: var(--ultracode-text);
+  filter: drop-shadow(0 0 2px var(--ultracode-glow));
+  animation: ultracode-blink var(--duration) linear var(--delay) 1 both;
+}
+
+.ultracode-glyph.is-hot {
+  color: var(--ultracode-core);
+}
+
+.ultracode-glyph svg {
+  display: block;
+  fill: currentColor;
+}
+
+@keyframes ultracode-blink {
+  0%,
+  3% {
+    opacity: 0;
+  }
+  4%,
+  62% {
+    opacity: 1;
+  }
+  63%,
+  70% {
+    opacity: 0;
+  }
+  71%,
+  82% {
+    opacity: 1;
+  }
+  83%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.ultracode-pixel {
+  width: var(--size);
+  height: var(--size);
+  background: var(--ultracode-text);
+  animation: ultracode-pixel-fade var(--duration) linear var(--delay) 1 both;
+}
+
+.ultracode-pixel.is-hot {
+  background: var(--ultracode-core);
+}
+
+@keyframes ultracode-pixel-fade {
+  0%,
+  3% {
+    opacity: 0;
+  }
+  4%,
+  58% {
+    opacity: 1;
+  }
+  59%,
+  80% {
+    opacity: 0.5;
+  }
+  81%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* Ultrathink: a rainbow ring ripples out while sparkles spiral up. */
+.ultrathink-ring {
+  position: absolute;
+  opacity: 0;
+  animation: ultrathink-ring var(--duration) var(--motion-ease-out) var(--delay)
+    1 both;
+}
+
+@keyframes ultrathink-ring {
+  0% {
+    transform: scale(var(--scale-x), var(--scale-y));
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  45% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1, 1);
+    opacity: 0;
+  }
+}
+
+.ultrathink-sparkle {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 0;
+  height: 0;
+  animation: ultrathink-rise var(--duration) cubic-bezier(0.2, 0.7, 0.3, 1)
+    var(--delay) 1 both;
+}
+
+@keyframes ultrathink-rise {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(var(--drift), var(--lift));
+  }
+}
+
+.ultrathink-orbit {
+  width: 0;
+  height: 0;
+  animation: ultrathink-spin var(--duration) cubic-bezier(0.3, 0.5, 0.4, 1)
+    var(--delay) 1 both;
+}
+
+@keyframes ultrathink-spin {
+  from {
+    transform: rotate(var(--spin-from));
+  }
+  to {
+    transform: rotate(var(--spin-to));
+  }
+}
+
+.ultrathink-arm {
+  width: 0;
+  height: 0;
+  animation: ultrathink-out var(--duration) ease-out var(--delay) 1 both;
+}
+
+@keyframes ultrathink-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(var(--reach));
+  }
+}
+
+.ultrathink-glyph {
+  position: absolute;
+  left: calc(var(--size) / -2);
+  top: calc(var(--size) / -2);
+  width: var(--size);
+  height: var(--size);
+  color: var(--color);
+  filter: drop-shadow(
+    0 0 3px color-mix(in srgb, var(--color) 70%, transparent)
+  );
+  animation: ultrathink-twinkle var(--duration) ease-in-out var(--delay) 1 both;
+}
+
+.ultrathink-glyph svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: currentColor;
+}
+
+.ultrathink-glyph.is-dot {
+  border-radius: 9999px;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--color) 35%, white),
+    var(--color) 70%
+  );
+}
+
+@keyframes ultrathink-twinkle {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  45% {
+    opacity: 0.7;
+    transform: scale(0.7);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ultra-burst {
+    display: none;
+  }
+
+  [data-ultra-effort]::after,
+  [data-ultra-effort] .ultra-effort-label {
+    animation: none !important;
+  }
+
+  [data-ultra-effort-option]::after {
+    transition: none;
+  }
+}
