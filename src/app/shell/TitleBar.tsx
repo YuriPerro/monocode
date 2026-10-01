@@ -20,7 +20,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
@@ -35,7 +34,13 @@ import {
 } from "../../shared/hooks/useAnimatedReorder";
 import { useTabCloseMotion } from "../../features/workspace/hooks/useTabCloseMotion";
 import { TabWidthMotion } from "./ClosingTab";
-import { CLOSE_SLIDE, OPEN_SLIDE } from "./useWidthReveal";
+import {
+  canSlide,
+  CLOSE_SLIDE,
+  followersOf,
+  OPEN_SLIDE,
+  translateXOf,
+} from "./useWidthReveal";
 import { FileTypeIcon } from "../../features/files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -614,16 +619,51 @@ export function OverlayNav({
   );
 }
 
+const TRAFFIC_LIGHT_ROOM = 70;
+
 /**
- * Room the title bar keeps for the traffic lights, eased like the panel slide
- * so it shrinks as a panel opens and grows as the last one shuts.
+ * Room the title bar keeps for the traffic lights, so it shrinks as a panel
+ * opens and grows as the last one shuts. The room changes size at once and
+ * the title bar after it slides from where it was, eased like the panel
+ * slide, so nothing lays out on every frame.
  */
-function trafficLightRoom(needed: boolean): CSSProperties {
-  const slide = needed ? CLOSE_SLIDE : OPEN_SLIDE;
-  return {
-    width: needed ? 70 : 0,
-    transition: `width ${slide.duration}ms ${slide.easing}`,
-  };
+function useTrafficLightRoom(needed: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const width = needed ? TRAFFIC_LIGHT_ROOM : 0;
+  const settled = useRef(width);
+  const slides = useRef<{ el: Element; animation: Animation }[]>([]);
+
+  useLayoutEffect(() => {
+    const previous = settled.current;
+    settled.current = width;
+    if (previous === width) return;
+    const moving = slides.current[0]?.el;
+    const offset = moving
+      ? translateXOf(getComputedStyle(moving).transform)
+      : 0;
+    for (const { animation } of slides.current) animation.cancel();
+    slides.current = [];
+    const room = ref.current;
+    if (!room || !canSlide(room)) return;
+    const from = `translateX(${previous - width + offset}px)`;
+    slides.current = followersOf(room, room.closest("header")).map((el) => ({
+      el,
+      animation: el.animate(
+        [{ transform: from }, { transform: "translateX(0px)" }],
+        needed ? CLOSE_SLIDE : OPEN_SLIDE,
+      ),
+    }));
+  }, [needed, width]);
+
+  useLayoutEffect(
+    () => () => {
+      for (const { animation } of slides.current) animation.cancel();
+      slides.current = [];
+    },
+    [],
+  );
+
+  return { ref, style: { width } };
 }
 
 function TitleBarComponent({
@@ -868,6 +908,9 @@ function TitleBarComponent({
   };
 
   const railClosed = !projectRailOpen;
+  const trafficLightRoom = useTrafficLightRoom(
+    railClosed && !sessionSidebarOpen,
+  );
   const showCurrentProject = looksLikeProject(cwd);
   // Until a project is picked, the rail and the sidebar hide, so nothing
   // project-scoped is actionable and the window controls need room.
@@ -957,15 +1000,12 @@ function TitleBarComponent({
       ) : null}
       {/* An open session sidebar already clears the traffic lights, so the
           title bar only makes room for them once both panels are closed. The
-          room grows and shrinks with the panels' slide, so nothing passes
-          under the traffic lights while one is still narrow. */}
+          room follows the panels' slide, so nothing passes under the traffic
+          lights while one is still narrow. */}
       {!projectless && onToggleSessionSidebar ? (
         <div className="flex shrink-0 items-center px-1.5">
           {IS_MAC && !compactRail ? (
-            <div
-              className="shrink-0 motion-reduce:transition-none!"
-              style={trafficLightRoom(railClosed && !sessionSidebarOpen)}
-            />
+            <div className="shrink-0" {...trafficLightRoom} />
           ) : null}
           <IconButton
             label={`Toggle Session Sidebar (${MOD}${SHIFT}B)`}

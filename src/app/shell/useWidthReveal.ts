@@ -16,8 +16,10 @@ export const OPEN_SLIDE: KeyframeAnimationOptions = {
 export const CLOSE_SLIDE: KeyframeAnimationOptions = {
   duration: 160,
   easing: "cubic-bezier(0.4, 0, 1, 1)",
-  fill: "forwards",
 };
+
+/** Marks the row whose content after a sliding panel moves along with it. */
+const SLIDE_ROW = "[data-slide-row]";
 
 /**
  * The phase after `shown` or `slide` changes. A change of `shown` slides only
@@ -58,12 +60,74 @@ export function settleWidthReveal(
   return reveal;
 }
 
+/** The x translation of a computed `transform`, such as `matrix(1, 0, 0, 1, 12, 0)`. */
+export function translateXOf(transform: string): number {
+  const matrix = /^matrix(3d)?\(([^)]*)\)$/.exec(transform.trim());
+  if (!matrix) return 0;
+  const x = Number(matrix[2].split(",")[matrix[1] ? 12 : 4]);
+  return Number.isFinite(x) ? x : 0;
+}
+
 /**
- * Slides a panel open and shut by animating the width of a frame around it,
- * so the workspace is pushed along. The panel stays mounted, inert, until it
- * has slid away. Keep `slide` true only while the panel owns its slot: when a
- * view or another panel takes it over, the panel appears or drops at once.
- * The first render never slides.
+ * Keyframes for a panel `width` wide whose shown part goes from `from` to `to`
+ * pixels: the panel comes out from behind its frame's left edge, and whatever
+ * follows it moves by the shown part.
+ */
+export function slideKeyframes(from: number, to: number, width: number) {
+  return {
+    panel: [
+      { transform: `translateX(${from - width}px)` },
+      { transform: `translateX(${to - width}px)` },
+    ],
+    followers: [
+      { transform: `translateX(${from}px)` },
+      { transform: `translateX(${to}px)` },
+    ],
+  };
+}
+
+/**
+ * What a change in `el`'s width pushes along: every element after it, at each
+ * level up to `row`. Nothing outside `row` moves.
+ */
+export function followersOf(el: Element, row: Element | null): Element[] {
+  if (!row || row === el || !row.contains(el)) return [];
+  const followers: Element[] = [];
+  for (
+    let node: Element | null = el;
+    node && node !== row;
+    node = node.parentElement
+  ) {
+    for (
+      let next = node.nextElementSibling;
+      next;
+      next = next.nextElementSibling
+    ) {
+      followers.push(next);
+    }
+  }
+  return followers;
+}
+
+/** Whether `el` can be animated and the user has not asked for less motion. */
+export function canSlide(el: Element) {
+  return (
+    typeof el.animate === "function" &&
+    !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+/**
+ * Slides a panel open and shut, pushing the workspace along, without laying
+ * the workspace out on every frame. While it slides, the panel's frame takes
+ * no room in its row, so what follows keeps the wider of its two layouts;
+ * the panel and everything after it in the `data-slide-row` row move by
+ * transform alone. The row lays out once per slide: at the end of an opening
+ * slide, at the start of a closing one.
+ *
+ * The panel stays mounted, inert, until it has slid away. Keep `slide` true
+ * only while the panel owns its slot: when a view or another panel takes it
+ * over, the panel appears or drops at once. The first render never slides.
  */
 export function useWidthReveal({
   shown,
@@ -86,57 +150,59 @@ export function useWidthReveal({
   }
   const { phase } = reveal;
   const ref = useRef<HTMLDivElement>(null);
-  const animation = useRef<Animation | null>(null);
+  const slides = useRef<Animation[]>([]);
 
   // The target is the panel's own width, measured, so a resized panel slides
-  // to its size. A reversal mid-slide starts from wherever the width is.
+  // to its size. A reversal mid-slide starts from wherever the panel is.
   useLayoutEffect(() => {
-    const running = animation.current;
-    if (phase !== "opening" && phase !== "closing") {
-      // A finished close holds its zero width until it is cancelled.
-      running?.cancel();
-      animation.current = null;
-      return;
-    }
+    const frame = ref.current;
+    const panel = frame?.firstElementChild;
+    const full = panel instanceof HTMLElement ? panel.offsetWidth : 0;
+    const closing = phase === "closing";
+    const from =
+      slides.current.length > 0 && panel
+        ? full + translateXOf(getComputedStyle(panel).transform)
+        : closing
+          ? full
+          : 0;
+    // Slides hold their last frame until the phase they landed commits.
+    for (const running of slides.current) running.cancel();
+    slides.current = [];
+    if (frame) frame.style.marginRight = "";
+    if (phase !== "opening" && !closing) return;
     const settle = () =>
       setStored((current) => settleWidthReveal(current, phase));
-    const frame = ref.current;
-    if (!frame) {
+    if (!frame || !(panel instanceof HTMLElement) || !canSlide(frame)) {
       settle();
       return;
     }
-    const closing = phase === "closing";
-    const full =
-      frame.firstElementChild instanceof HTMLElement
-        ? frame.firstElementChild.offsetWidth
-        : 0;
-    const from = running
-      ? frame.getBoundingClientRect().width
-      : closing
-        ? full
-        : 0;
-    running?.cancel();
-    animation.current = null;
-    const reduceMotion = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (typeof frame.animate !== "function" || reduceMotion) {
-      settle();
-      return;
-    }
-    const next = frame.animate(
-      [{ width: `${from}px` }, { width: `${closing ? 0 : full}px` }],
-      closing ? CLOSE_SLIDE : OPEN_SLIDE,
+    const keyframes = slideKeyframes(from, closing ? 0 : full, full);
+    const timing: KeyframeAnimationOptions = {
+      ...(closing ? CLOSE_SLIDE : OPEN_SLIDE),
+      fill: "forwards",
+    };
+    frame.style.marginRight = `${-full}px`;
+    const moved = followersOf(frame, frame.closest(SLIDE_ROW)).map((follower) =>
+      follower.animate(keyframes.followers, timing),
     );
-    animation.current = next;
+    const next = panel.animate(keyframes.panel, timing);
+    slides.current = [...moved, next];
     next.onfinish = () => {
-      if (animation.current === next) settle();
+      if (slides.current.includes(next)) settle();
     };
   }, [phase]);
 
+  useLayoutEffect(
+    () => () => {
+      for (const running of slides.current) running.cancel();
+      slides.current = [];
+    },
+    [],
+  );
+
   const closing = phase === "closing";
-  // While sliding, the panel is pinned to the right edge and clipped, so it
-  // slides in as the width grows. At rest nothing clips its resize handle.
+  // While sliding, the frame clips the panel to the room it has come out into.
+  // At rest nothing clips its resize handle.
   const sliding = phase === "opening" || closing;
   return {
     rendered: phase !== "hidden",
@@ -147,7 +213,7 @@ export function useWidthReveal({
       className:
         phase === "hidden"
           ? "hidden"
-          : `flex shrink-0${sliding ? " justify-end overflow-hidden" : ""}${
+          : `flex shrink-0${sliding ? " overflow-hidden" : ""}${
               closing ? " pointer-events-none" : ""
             }`,
     },

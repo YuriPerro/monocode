@@ -10641,7 +10641,10 @@ function Workspace({
           }`}
         >
           {compactTitleBar ? workspaceTitleBar : null}
-          <div className="flex min-h-0 min-w-0 flex-1">
+          <div
+            data-slide-row
+            className="flex min-h-0 min-w-0 flex-1 overflow-x-clip"
+          >
             <Sidebar
               cwd={sidebarCwd}
               gitCwd={gitCwd}

@@ -1515,7 +1515,9 @@ describe("collapsed rail Inbox actions", () => {
     const expectDrawerDismissed = () => {
       expect(drawer()?.dataset.sidebarDrawer).toBe("closing");
       expect(drawer()?.inert).toBe(true);
-      expect(animations.at(-1)!.keyframes.at(-1)).toEqual({ width: "0px" });
+      expect(animations.at(-1)!.keyframes.at(-1)).toEqual({
+        transform: "translateX(0px)",
+      });
       finish();
       expect(drawer()).toBeNull();
     };
@@ -1529,7 +1531,9 @@ describe("collapsed rail Inbox actions", () => {
     expect(drawer()?.className).not.toContain("absolute");
     expect(drawer()?.querySelector("aside")?.className).toContain("body-glass");
     expect(animations).toHaveLength(1);
-    expect(animations[0].keyframes[0]).toEqual({ width: "0px" });
+    expect(animations[0].keyframes[0]).toEqual({
+      transform: "translateX(0px)",
+    });
     expect(compactTab("Explorer").getAttribute("aria-selected")).toBe("true");
 
     act(() => compactTab("Sessions").click());
