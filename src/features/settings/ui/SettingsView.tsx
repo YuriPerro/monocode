@@ -11,10 +11,12 @@ import {
   Globe,
   ImagePlus,
   Loader,
+  MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   RotateCcw,
+  Star,
   Search,
   Trash2,
   X,
@@ -3416,6 +3418,8 @@ function ProviderAccountsSettings() {
                 const identity = identities[identityKey(account)];
                 const orgTag = identityOrganizationTag(identity);
                 const limits = usage.usage[accountUsageKey(account)];
+                const preferred =
+                  account.id === preferredProviderAccountId(provider);
                 return editing ? (
                   <ProviderAccountEditor
                     key={account.id}
@@ -3444,6 +3448,14 @@ function ProviderAccountsSettings() {
                             {orgTag}
                           </span>
                         ) : null}
+                        {preferred ? (
+                          <span
+                            title="Projects that have not picked an account use this one"
+                            className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-medium uppercase leading-4 tracking-wide text-accent"
+                          >
+                            Default
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-0.5 flex min-w-0 items-center gap-2.5 text-[10px]">
                         <AccountStatusLabel
@@ -3462,71 +3474,34 @@ function ProviderAccountsSettings() {
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
-                    <button
-                      type="button"
-                      disabled={Boolean(working)}
-                      aria-label={`Sign in to ${account.label}`}
-                      title="Open the provider sign-in in your browser for this account"
-                      onClick={() => void signIn(account)}
-                      className={`flex h-6.5 shrink-0 items-center gap-1.5 rounded-md border border-content/15 px-2.5 text-[11px] text-content/80 transition-[opacity,transform] duration-150 hover:border-content/30 hover:bg-content/10 hover:text-content focus-visible:opacity-100 active:scale-[0.96] disabled:opacity-40 ${
-                        limits?.signInRequired ||
-                        working === `login:${provider}:${account.id}`
-                          ? ""
-                          : "opacity-0 group-hover/account:opacity-100"
-                      }`}
-                    >
-                      {working === `login:${provider}:${account.id}` ? (
-                        <Loader className="size-3 animate-spin" />
-                      ) : null}
-                      {limits?.signInRequired ? "Sign in" : "Sign in again"}
-                    </button>
-                    <div className="flex min-w-24 shrink-0 items-center justify-end gap-1">
-                      {account.id === preferredProviderAccountId(provider) ? (
-                        <span
-                          title="Projects that have not picked an account use this one"
-                          className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30"
-                        >
-                          Default
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          disabled={Boolean(working)}
-                          aria-label={`Use ${account.label} by default`}
-                          title="Use this account in projects that have not picked one"
-                          onClick={() => preferProviderAccount(provider, account.id)}
-                          className="mr-1 shrink-0 rounded px-1 text-[10px] font-medium uppercase tracking-wide text-content/40 opacity-0 transition-opacity duration-150 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover/account:opacity-100 disabled:opacity-35"
-                        >
-                          Set default
-                        </button>
-                      )}
+                    {limits?.signInRequired ||
+                    working === `login:${provider}:${account.id}` ? (
                       <button
                         type="button"
                         disabled={Boolean(working)}
-                        aria-label={`Rename ${account.label}`}
-                        title="Rename account"
-                        onClick={() => startRename(account)}
-                        className="grid size-7 place-items-center rounded-md text-content/40 transition-transform duration-150 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-35"
+                        aria-label={`Sign in to ${account.label}`}
+                        title="Open the provider sign-in in your browser for this account"
+                        onClick={() => void signIn(account)}
+                        className="flex h-6.5 shrink-0 items-center gap-1.5 rounded-md border border-content/15 px-2.5 text-[11px] text-content/80 transition-transform duration-150 hover:border-content/30 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-40"
                       >
-                        <Pencil className="size-3.5" strokeWidth={1.75} />
+                        {working === `login:${provider}:${account.id}` ? (
+                          <Loader className="size-3 animate-spin" />
+                        ) : null}
+                        Sign in
                       </button>
-                      {!account.isDefault ? (
-                        <button
-                          type="button"
-                          disabled={Boolean(working)}
-                          aria-label={`Remove ${account.label}`}
-                          title="Remove account"
-                          onClick={() => void removeAccount(account)}
-                          className="grid size-7 place-items-center rounded-md text-content/35 transition-transform duration-150 hover:bg-red-400/10 hover:text-red-400 active:scale-[0.96] disabled:opacity-35"
-                        >
-                          {removing ? (
-                            <Loader className="size-3.5 animate-spin" />
-                          ) : (
-                            <Trash2 className="size-3.5" strokeWidth={1.75} />
-                          )}
-                        </button>
-                      ) : null}
-                    </div>
+                    ) : null}
+                    <AccountActionsMenu
+                      account={account}
+                      isPreferred={preferred}
+                      busy={Boolean(working)}
+                      removing={removing}
+                      onSetDefault={() =>
+                        preferProviderAccount(provider, account.id)
+                      }
+                      onSignIn={() => void signIn(account)}
+                      onRename={() => startRename(account)}
+                      onRemove={() => void removeAccount(account)}
+                    />
                   </div>
                 );
               })}
@@ -3556,6 +3531,121 @@ function ProviderAccountsSettings() {
         </p>
       ) : null}
     </Group>
+  );
+}
+
+function AccountActionsMenu({
+  account,
+  isPreferred,
+  busy,
+  removing,
+  onSetDefault,
+  onSignIn,
+  onRename,
+  onRemove,
+}: {
+  account: ProviderAccount;
+  isPreferred: boolean;
+  busy: boolean;
+  removing: boolean;
+  onSetDefault: () => void;
+  onSignIn: () => void;
+  onRename: () => void;
+  onRemove: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const item =
+    "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-[13px]";
+  const run = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
+  return (
+    <>
+      <button
+        ref={button}
+        type="button"
+        disabled={busy}
+        title={`${account.label} actions`}
+        aria-label={`${account.label} actions`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((next) => !next)}
+        className={`grid size-7 shrink-0 place-items-center rounded-md disabled:opacity-35 ${
+          open
+            ? "bg-selection text-content"
+            : "text-content/45 hover:bg-content/10 hover:text-content"
+        }`}
+      >
+        {removing ? (
+          <Loader className="size-3.5 animate-spin" />
+        ) : (
+          <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
+        )}
+      </button>
+      {open ? (
+        <Popover
+          anchor={button}
+          side="bottom"
+          align="end"
+          gap={4}
+          width={200}
+          constrainHeight={false}
+          role="menu"
+          aria-label={`${account.label} actions`}
+          onDismiss={() => setOpen(false)}
+          className="p-1"
+        >
+          {isPreferred ? null : (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={run(onSetDefault)}
+              className={`${item} text-content hover:bg-content/5`}
+            >
+              <Star className="size-3.5 text-content/60" strokeWidth={1.75} />
+              Set as default
+            </button>
+          )}
+          <button
+            type="button"
+            role="menuitem"
+            onClick={run(onSignIn)}
+            className={`${item} text-content hover:bg-content/5`}
+          >
+            <RotateCcw
+              className="size-3.5 text-content/60"
+              strokeWidth={1.75}
+            />
+            Sign in again
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={run(onRename)}
+            className={`${item} text-content hover:bg-content/5`}
+          >
+            <Pencil className="size-3.5 text-content/60" strokeWidth={1.75} />
+            Rename
+          </button>
+          {account.isDefault ? null : (
+            <>
+              <div className="my-1 h-px bg-content/7" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={run(onRemove)}
+                className={`${item} text-red-300/90 hover:bg-red-500/15`}
+              >
+                <Trash2 className="size-3.5" strokeWidth={1.75} />
+                Remove account
+              </button>
+            </>
+          )}
+        </Popover>
+      ) : null}
+    </>
   );
 }
 
