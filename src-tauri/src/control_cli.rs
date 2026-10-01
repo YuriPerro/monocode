@@ -120,7 +120,7 @@ Actions:
                   requestId to finish, then return its exchange. Omit
                   sentRequestId to wait for the session to go idle and get its
                   newest exchange. settled:false means it is still working;
-                  call again to keep waiting.
+                  call again to keep waiting. One wait at a time per session.
   sessions.draft {"sessionId":"...","prompt":"..."}
                   Save an unsent draft in an idle project session. Existing
                   drafts are preserved; send or remove one in MonoCode first.

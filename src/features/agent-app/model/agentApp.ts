@@ -118,6 +118,7 @@ const FIELDS = new Map<string, readonly string[]>([
 ]);
 
 const WAIT_POLL_MS = 500;
+const waitingSources = new Set<string>();
 
 function fields(action: string, input: Record<string, unknown>) {
   const allowed = FIELDS.get(action);
@@ -367,16 +368,29 @@ export async function handleAgentApp(
         throw new Error("timeoutSeconds must be an integer from 1 to 25");
       const maxChars = input.maxChars as number | undefined;
       await projectSession(source, id, host);
-      const appRequestId = sentRequestId && `app-${source.id}-${sentRequestId}`;
-      const deadline = Date.now() + (timeoutSeconds as number) * 1000;
-      for (;;) {
-        const target = await host.session(id);
-        if (!target) throw new Error("Session was not found in this project");
-        const turn = sessionConversationTurn(target, appRequestId, maxChars);
-        const settled = !target.busy && (!appRequestId || !!turn);
-        if (settled || Date.now() >= deadline)
-          return { sessionId: id, settled, busy: !!target.busy, turn };
-        await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+      if (waitingSources.has(source.id))
+        throw new Error(
+          "This session is already waiting; wait for one session at a time",
+        );
+      waitingSources.add(source.id);
+      try {
+        const appRequestId =
+          sentRequestId && `app-${source.id}-${sentRequestId}`;
+        const deadline = Date.now() + (timeoutSeconds as number) * 1000;
+        for (;;) {
+          const target = await host.session(id);
+          if (!target) throw new Error("Session was not found in this project");
+          const turn = sessionConversationTurn(target, appRequestId, maxChars);
+          const latest = sessionConversationTurn(target, undefined, maxChars);
+          const settled = appRequestId
+            ? !!turn && (!target.busy || latest?.turnId !== turn.turnId)
+            : !target.busy;
+          if (settled || Date.now() >= deadline)
+            return { sessionId: id, settled, busy: !!target.busy, turn };
+          await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+        }
+      } finally {
+        waitingSources.delete(source.id);
       }
     }
     case "sessions.draft": {

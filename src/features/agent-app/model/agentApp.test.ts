@@ -222,6 +222,83 @@ describe("agent app commands", () => {
     }
   });
 
+  it("settles a sent turn once a later queued turn keeps the session busy", async () => {
+    const { source, host } = fixture();
+    const other = {
+      ...newSession("codex", source.cwd),
+      id: "other",
+      busy: true,
+    };
+    other.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "First question",
+        appRequestId: "app-lead-send-1",
+      },
+      { id: "a1", role: "assistant", text: "First answer" },
+      { id: "u2", role: "user", text: "Queued follow-up" },
+    ];
+    host.session = vi.fn(async (id) => (id === "other" ? other : null));
+    expect(
+      await handleAgentApp(
+        source,
+        "wait-queued",
+        "sessions.wait",
+        { sessionId: "other", sentRequestId: "send-1", timeoutSeconds: 1 },
+        host,
+      ),
+    ).toMatchObject({
+      settled: true,
+      busy: true,
+      turn: { turnId: "u1", assistant: { text: "First answer" } },
+    });
+  });
+
+  it("lets a session run only one wait at a time", async () => {
+    vi.useFakeTimers();
+    try {
+      const { source, host } = fixture();
+      const other = {
+        ...newSession("codex", source.cwd),
+        id: "other",
+        busy: true,
+      };
+      host.session = vi.fn(async (id) => (id === "other" ? other : null));
+      const first = handleAgentApp(
+        source,
+        "wait-a",
+        "sessions.wait",
+        { sessionId: "other", timeoutSeconds: 1 },
+        host,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      await expect(
+        handleAgentApp(
+          source,
+          "wait-b",
+          "sessions.wait",
+          { sessionId: "other", timeoutSeconds: 1 },
+          host,
+        ),
+      ).rejects.toThrow("already waiting");
+      await vi.advanceTimersByTimeAsync(1_500);
+      await first;
+      other.busy = false;
+      await expect(
+        handleAgentApp(
+          source,
+          "wait-c",
+          "sessions.wait",
+          { sessionId: "other", timeoutSeconds: 1 },
+          host,
+        ),
+      ).resolves.toMatchObject({ settled: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns unsettled when the waited turn outlasts the timeout", async () => {
     vi.useFakeTimers();
     try {
