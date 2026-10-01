@@ -247,16 +247,22 @@ describe("settings pages", () => {
       label: "Wrk",
     });
     await render("providers");
+    const accountAction = async (label: string, action: string) => {
+      await act(async () =>
+        container
+          .querySelector<HTMLButtonElement>(`[aria-label="${label} actions"]`)!
+          .click(),
+      );
+      await act(async () =>
+        [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+          .find((item) => item.textContent?.trim() === action)!
+          .click(),
+      );
+    };
 
     expect(container.textContent).toContain("Claude Code");
     expect(container.textContent).toContain("Codex");
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>(
-          '[aria-label="Rename Default account"]',
-        )!
-        .click(),
-    );
+    await accountAction("Default account", "Rename");
     const defaultInput = container.querySelector<HTMLInputElement>(
       '[aria-label="Rename Claude Code account"]',
     )!;
@@ -274,11 +280,7 @@ describe("settings pages", () => {
     );
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
 
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Rename Wrk"]')!
-        .click(),
-    );
+    await accountAction("Wrk", "Rename");
     const input = container.querySelector<HTMLInputElement>(
       '[aria-label="Rename Codex account"]',
     )!;
@@ -296,11 +298,7 @@ describe("settings pages", () => {
     );
     expect(providerAccounts("codex")[1]?.label).toBe("Work");
 
-    await act(async () =>
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Remove Work"]')!
-        .click(),
-    );
+    await accountAction("Work", "Remove account");
     expect(ask).toHaveBeenCalled();
     expect(invoke).toHaveBeenCalledWith("provider_account_remove", {
       provider: "codex",
