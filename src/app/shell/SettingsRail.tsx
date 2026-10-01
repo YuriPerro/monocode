@@ -12,6 +12,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   type IconComponent,
+  Users,
 } from "../../shared/ui/icons";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
 import {
@@ -26,6 +27,7 @@ const SECTION_ICONS: Record<SettingsSectionId, IconComponent> = {
   keybindings: Keyboard,
   chat: MessageSquare,
   providers: Bot,
+  profiles: Users,
   mcp: Globe,
   skills: Sparkles,
   inbox: Inbox,

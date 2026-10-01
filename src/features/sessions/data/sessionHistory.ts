@@ -38,6 +38,7 @@ export function mergeHistorySummary(
     orchestrationLeadId:
       summary.orchestrationLeadId ?? previous?.orchestrationLeadId,
     automationId: summary.automationId ?? previous?.automationId,
+    profile: summary.profile ?? previous?.profile,
   };
   return [next, ...current.filter((entry) => entry.id !== summary.id)].sort(
     compareSessionSummaries,
@@ -120,6 +121,7 @@ export function summaryFromSession(
       ? { linkedWorkItem: session.linkedWorkItem }
       : {}),
     ...(session.automationId ? { automationId: session.automationId } : {}),
+    ...(session.profile ? { profile: session.profile } : {}),
     ...(!session.worktreeRemoved && (session.branch || git?.branch)
       ? { branch: session.branch || git?.branch }
       : {}),
@@ -187,11 +189,17 @@ export function historyWithLiveSessions(
       const stored = rows[storedIndex];
       const draft = !!sessionDraftBlock(session);
       const automationId = session.automationId || stored.automationId;
-      if (!!stored.draft !== draft || stored.automationId !== automationId) {
+      const profile = session.profile ?? stored.profile;
+      if (
+        !!stored.draft !== draft ||
+        stored.automationId !== automationId ||
+        stored.profile?.id !== profile?.id
+      ) {
         rows[storedIndex] = {
           ...stored,
           draft: draft || undefined,
           ...(automationId ? { automationId } : {}),
+          ...(profile ? { profile } : {}),
         };
       }
       continue;

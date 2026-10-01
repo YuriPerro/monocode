@@ -102,6 +102,18 @@ import UngroupItemsIcon from "@hugeicons/core-free-icons/UngroupItemsIcon";
 import ViewIcon from "@hugeicons/core-free-icons/ViewIcon";
 import WholeWordIcon from "@hugeicons/core-free-icons/WholeWordIcon";
 import Wrench01Icon from "@hugeicons/core-free-icons/Wrench01Icon";
+import AiBrain01Icon from "@hugeicons/core-free-icons/AiBrain01Icon";
+import BookOpen01Icon from "@hugeicons/core-free-icons/BookOpen01Icon";
+import Bug01Icon from "@hugeicons/core-free-icons/Bug01Icon";
+import SourceCodeIcon from "@hugeicons/core-free-icons/SourceCodeIcon";
+import Compass01Icon from "@hugeicons/core-free-icons/Compass01Icon";
+import DatabaseIcon from "@hugeicons/core-free-icons/DatabaseIcon";
+import Layers01Icon from "@hugeicons/core-free-icons/Layers01Icon";
+import Rocket01Icon from "@hugeicons/core-free-icons/Rocket01Icon";
+import ServerStack01Icon from "@hugeicons/core-free-icons/ServerStack01Icon";
+import Target01Icon from "@hugeicons/core-free-icons/Target01Icon";
+import TestTube01Icon from "@hugeicons/core-free-icons/TestTube01Icon";
+import UserMultipleIcon from "@hugeicons/core-free-icons/UserMultipleIcon";
 import { forwardRef, type Ref } from "react";
 
 /** Props shared by every chrome icon. `icon` is filled in by the named wrappers. */
@@ -273,3 +285,17 @@ export const WholeWord = wrap(WholeWordIcon, "WholeWord");
 export const Wrench = wrap(Wrench01Icon, "Wrench");
 export const X = wrap(Cancel01Icon, "X");
 export const Zap = wrap(FlashIcon, "Zap");
+
+/** Agent profile glyphs. */
+export const Brain = wrap(AiBrain01Icon, "Brain");
+export const BookOpen = wrap(BookOpen01Icon, "BookOpen");
+export const Bug = wrap(Bug01Icon, "Bug");
+export const Code = wrap(SourceCodeIcon, "Code");
+export const Compass = wrap(Compass01Icon, "Compass");
+export const Database = wrap(DatabaseIcon, "Database");
+export const Layers = wrap(Layers01Icon, "Layers");
+export const Rocket = wrap(Rocket01Icon, "Rocket");
+export const Server = wrap(ServerStack01Icon, "Server");
+export const Target = wrap(Target01Icon, "Target");
+export const TestTube = wrap(TestTube01Icon, "TestTube");
+export const Users = wrap(UserMultipleIcon, "Users");

@@ -16,7 +16,7 @@ import {
   type SessionProfile,
 } from "../../sessions/model/session";
 
-const PROFILES_KEY = "monocode.agentProfiles.v1";
+export const AGENT_PROFILES_KEY = "monocode.agentProfiles.v1";
 const CHANGE_EVENT = "monocode-agent-profiles-changed";
 
 /** Launch configuration plus standing instructions for a named agent role. */
@@ -117,7 +117,7 @@ export function moveAgentProfile(id: string, toIndex: number): void {
 export function subscribeAgentProfiles(listener: () => void): () => void {
   const local = () => listener();
   const storage = (event: StorageEvent) => {
-    if (event.key === PROFILES_KEY) listener();
+    if (event.key === AGENT_PROFILES_KEY) listener();
   };
   window.addEventListener(CHANGE_EVENT, local);
   window.addEventListener("storage", storage);
@@ -215,7 +215,7 @@ function cleanSettings(value: unknown): Record<string, string> {
 
 function readStored(): unknown[] {
   try {
-    const parsed = JSON.parse(localStorage.getItem(PROFILES_KEY) ?? "[]");
+    const parsed = JSON.parse(localStorage.getItem(AGENT_PROFILES_KEY) ?? "[]");
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
@@ -223,6 +223,6 @@ function readStored(): unknown[] {
 }
 
 function write(profiles: AgentProfile[]): void {
-  localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles));
+  localStorage.setItem(AGENT_PROFILES_KEY, JSON.stringify(profiles));
   window.dispatchEvent(new Event(CHANGE_EVENT));
 }

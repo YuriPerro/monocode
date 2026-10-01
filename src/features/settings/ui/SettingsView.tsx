@@ -1,3 +1,4 @@
+import { ProfilesPage } from "../../profiles/ui/ProfilesPage";
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
@@ -553,6 +554,7 @@ export function SettingsView({
               {section === "providers" ? (
                 <ProvidersPage cwd={cwd} recents={recents} />
               ) : null}
+              {section === "profiles" ? <ProfilesPage cwd={cwd} /> : null}
               {section === "worktrees" ? (
                 <WorktreesPage
                   cwd={cwd}

@@ -2048,6 +2048,22 @@ header[data-tauri-drag-region] button {
   }
 }
 
+/* Agent profile identity: a quiet fill and readable ink from the profile's
+   own color, so any palette or custom color works in both themes. */
+.profile-chip {
+  background: color-mix(in oklab, var(--profile-color) 16%, transparent);
+  color: color-mix(in oklab, var(--profile-color) 72%, white);
+}
+
+html.theme-light .profile-chip {
+  background: color-mix(in oklab, var(--profile-color) 14%, transparent);
+  color: color-mix(in oklab, var(--profile-color) 68%, black);
+}
+
+button.profile-chip:hover {
+  background: color-mix(in oklab, var(--profile-color) 22%, transparent);
+}
+
 /* Two-frame mascot loop — a hard swap plus a one-pixel hop, arcade style. */
 .mascot-active {
   animation: mascot-hop var(--mascot-beat, 460ms) infinite;

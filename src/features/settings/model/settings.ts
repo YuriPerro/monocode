@@ -24,6 +24,7 @@ export type SettingsSectionId =
   | "keybindings"
   | "chat"
   | "providers"
+  | "profiles"
   | "mcp"
   | "skills"
   | "inbox"
@@ -98,6 +99,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
       "Provider accounts, agent CLIs MonoCode can drive, and the model new sessions start with.",
     keywords:
       "account sign in login model harness claude codex gemini cli default hooks",
+  },
+  {
+    id: "profiles",
+    group: "agents",
+    label: "Profiles",
+    description:
+      "Named agent roles. A session started as a profile uses its model and access, and its instructions become the agent's system prompt.",
+    keywords:
+      "profile role persona agent system prompt instructions designer reviewer",
   },
   {
     id: "mcp",

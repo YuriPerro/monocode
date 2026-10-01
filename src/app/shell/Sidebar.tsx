@@ -1,3 +1,4 @@
+import { ProfileChip } from "../../features/profiles/ui/ProfileChip";
 import { NO_BRANCH_LABEL } from "../../features/source-control/model/worktrees";
 import { OrchestrationSidebarAgents } from "../../features/orchestration/ui/OrchestrationSidebarAgents";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -3301,6 +3302,9 @@ const SessionCard = memo(function SessionCard({
                   harness={session.harness}
                   className="size-3.5 shrink-0"
                 />
+                {session.profile ? (
+                  <ProfileChip profile={session.profile} size="xs" />
+                ) : null}
                 <span className="min-w-0 truncate text-[11px] text-content/50">
                   {model}
                 </span>

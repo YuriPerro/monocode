@@ -63,6 +63,8 @@ export type Tab = {
   busyHarnesses: HarnessId[];
   /** Harnesses with a finished response that has not been focused yet. */
   doneHarnesses?: HarnessId[];
+  /** Color of the agent profile behind each harness mark, when there is one. */
+  harnessProfileColors?: Partial<Record<HarnessId, string>>;
   /** Open file basenames, active files first. */
   files: string[];
   /** Split layout with more than one pane in this tab. */
@@ -203,11 +205,13 @@ function TabHarnesses({
   harnesses,
   busyHarnesses,
   doneHarnesses,
+  profileColors,
   dimmed,
 }: {
   harnesses: HarnessId[];
   busyHarnesses: HarnessId[];
   doneHarnesses: HarnessId[];
+  profileColors?: Partial<Record<HarnessId, string>>;
   dimmed: boolean;
 }) {
   const shown = harnesses.slice(0, 3);
@@ -240,7 +244,16 @@ function TabHarnesses({
                 strokeWidth={2}
               />
             ) : (
-              <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
+              <span className="relative grid size-3.5 place-items-center">
+                <HarnessIcon harness={harness} className="size-3.5 shrink-0" />
+                {profileColors?.[harness] ? (
+                  <span
+                    data-profile-dot
+                    className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full ring-2 ring-background-base"
+                    style={{ background: profileColors[harness] }}
+                  />
+                ) : null}
+              </span>
             )}
           </span>
         );
@@ -343,6 +356,7 @@ function TitleTabItem({
             harnesses={tab.harnesses}
             busyHarnesses={tab.busyHarnesses}
             doneHarnesses={tab.doneHarnesses ?? []}
+            profileColors={tab.harnessProfileColors}
             dimmed={!active}
           />
         ) : tab.terminal || !fileIcon ? (

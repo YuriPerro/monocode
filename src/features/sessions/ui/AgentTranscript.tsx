@@ -1,3 +1,4 @@
+import { ProfileChip } from "../../profiles/ui/ProfileChip";
 import {
   ArrowUp,
   Check,
@@ -60,7 +61,7 @@ import {
   stubFilePreview,
 } from "../../../integrations/harness/core/preview";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import type { Attachment } from "../model/session";
+import type { Attachment, SessionProfile } from "../model/session";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
 import { playCue } from "../../settings/model/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
@@ -166,6 +167,8 @@ type Props = {
   busy?: boolean;
   cwd?: string;
   harness?: HarnessId;
+  /** Agent profile the session started as, shown beside each turn's mark. */
+  profile?: SessionProfile;
   model?: string;
   modelSettings?: Record<string, string>;
   pendingQuestion?: boolean;
@@ -210,6 +213,7 @@ function AgentTranscriptComponent({
   busy,
   cwd,
   harness,
+  profile,
   model,
   modelSettings,
   pendingQuestion = false,
@@ -843,6 +847,7 @@ function AgentTranscriptComponent({
                 title={foldTitle}
                 kind={workKind(folded)}
                 harness={turnHarness}
+                profile={profile}
                 live={live}
                 expandable={!!fold}
                 open={workOpen && !!fold}
@@ -1923,6 +1928,7 @@ function WorkFoldLine({
   title,
   kind,
   harness,
+  profile,
   live = false,
   expandable,
   open,
@@ -1931,6 +1937,7 @@ function WorkFoldLine({
   title: ReactNode;
   kind: ActivityPhaseKind;
   harness?: HarnessId;
+  profile?: SessionProfile;
   live?: boolean;
   expandable: boolean;
   open: boolean;
@@ -1977,6 +1984,7 @@ function WorkFoldLine({
       {title}
     </span>
   );
+  const chip = profile ? <ProfileChip profile={profile} size="xs" /> : null;
   const row = `flex w-full min-w-0 items-center gap-1.5 px-4 py-1 text-left${
     open ? " zen-fold-drop" : ""
   }`;
@@ -1989,6 +1997,7 @@ function WorkFoldLine({
         aria-live={live ? "polite" : undefined}
       >
         {icon}
+        {chip}
         {label}
       </div>
     );
@@ -2003,6 +2012,7 @@ function WorkFoldLine({
       className={`group ${row}`}
     >
       {icon}
+      {chip}
       {label}
     </button>
   );

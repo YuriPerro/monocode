@@ -1,3 +1,4 @@
+import { beforeFirstUserTurn } from "../../profiles/model/profileInstructions";
 import { ChevronDown, GripVertical, X } from "../../../shared/ui/icons";
 import {
   memo,
@@ -120,6 +121,8 @@ export type SessionPaneProps = {
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
   onModelChange: (sessionId: string, harness: HarnessId, model: string) => void;
+  onProfileChange?: (sessionId: string, profileId: string | null) => void;
+  onManageProfiles?: () => void;
   onModelSettingsChange: (
     sessionId: string,
     settings: Record<string, string>,
@@ -269,6 +272,8 @@ const LocalSessionPane = memo(function LocalSessionPane({
   onWorktreeBaseChange,
   onManageWorktrees,
   onModelChange,
+  onProfileChange,
+  onManageProfiles,
   onModelSettingsChange,
   onRuntimeModeChange,
   onSaveDraft,
@@ -616,6 +621,14 @@ const LocalSessionPane = memo(function LocalSessionPane({
       worktreeRemoved={session.worktreeRemoved}
       onManageWorktrees={onManageWorktrees}
       onNewTerminal={() => onNewTerminal(session.id)}
+      profile={session.profile}
+      profileLocked={!!session.busy || !beforeFirstUserTurn(session)}
+      onProfileChange={
+        onProfileChange
+          ? (profileId) => onProfileChange(session.id, profileId)
+          : undefined
+      }
+      onManageProfiles={onManageProfiles}
       onModelChange={(harness, model) => {
         onModelChange(session.id, harness, model);
         const selected = resolveModel(harness, model);
@@ -822,6 +835,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   visible={visible}
                   cwd={workCwd}
                   harness={session.harness}
+                  profile={session.profile}
                   model={session.model}
                   modelSettings={session.modelSettings}
                   pendingQuestion={!!session.pendingQuestion}

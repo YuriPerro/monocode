@@ -84,8 +84,11 @@ import type {
   RuntimeMode,
   WorkspaceMode,
   ComposerTurnOptions,
+  SessionProfile,
 } from "../model/session";
 import { HARNESS_TITLE, harnessSupportsAttachments } from "../model/session";
+import { ProfilePicker } from "../../profiles/ui/ProfilePicker";
+import { useAgentProfiles } from "../../profiles/ui/useAgentProfiles";
 import type {
   UserQuestionPrompt,
   UserQuestionReply,
@@ -266,6 +269,11 @@ type Props = {
   onNewTerminal?: () => void;
   onModelChange: (harness: HarnessId, model: string) => void;
   onModelSettingsChange?: (settings: Record<string, string>) => void;
+  /** Agent profile the session starts as; omit the handler to hide the picker. */
+  profile?: SessionProfile;
+  profileLocked?: boolean;
+  onProfileChange?: (profileId: string | null) => void;
+  onManageProfiles?: () => void;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
   onQuoteRequestConsumed?: (id: number) => void;
   onInboxCardDismiss?: () => void;
@@ -555,6 +563,10 @@ export function Composer({
   onNewTerminal,
   onModelChange,
   onModelSettingsChange,
+  profile,
+  profileLocked = false,
+  onProfileChange,
+  onManageProfiles,
   onRuntimeModeChange,
   onQuoteRequestConsumed,
   onInboxCardDismiss,
@@ -583,6 +595,7 @@ export function Composer({
   onEditingLastTurnChange,
   children,
 }: Props) {
+  const profiles = useAgentProfiles();
   const ref = useRef<HTMLTextAreaElement>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const plusRef = useRef<HTMLDivElement>(null);
@@ -2587,6 +2600,16 @@ export function Composer({
               }}
             >
               <div className="flex shrink-0 items-center gap-1">
+                {onProfileChange ? (
+                  <ProfilePicker
+                    value={profile}
+                    profiles={profiles}
+                    locked={profileLocked}
+                    onChange={onProfileChange}
+                    onManage={() => onManageProfiles?.()}
+                    onClose={() => ref.current?.focus()}
+                  />
+                ) : null}
                 <ModelPicker
                   harness={harness}
                   model={model}

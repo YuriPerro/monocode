@@ -4,6 +4,12 @@ import {
   scheduleHarnessFlush,
   type ScheduledFlush,
 } from "./model/harnessFlush";
+import { profileColor } from "../features/profiles/ui/ProfileGlyph";
+import {
+  agentProfile,
+  applyAgentProfile,
+  clearAgentProfile,
+} from "../features/profiles/model/profiles";
 import {
   beforeFirstUserTurn,
   nativeProfileInstructions,
@@ -887,6 +893,8 @@ function titleTabsEqual(a: TitleTab[], b: TitleTab[]): boolean {
       tab.busyHarnesses.join("\u0000") === other.busyHarnesses.join("\u0000") &&
       (tab.doneHarnesses ?? []).join("\u0000") ===
         (other.doneHarnesses ?? []).join("\u0000") &&
+      JSON.stringify(tab.harnessProfileColors ?? {}) ===
+        JSON.stringify(other.harnessProfileColors ?? {}) &&
       tab.files.join("\u0000") === other.files.join("\u0000") &&
       tab.multiPane === other.multiPane &&
       tab.fileFocused === other.fileFocused &&
@@ -5794,6 +5802,30 @@ function Workspace({
     [],
   );
 
+  const onProfileChange = useCallback(
+    (sessionId: string, profileId: string | null) => {
+      const current = sessionsRef.current.find((s) => s.id === sessionId);
+      if (!current || current.busy || !beforeFirstUserTurn(current)) return;
+      const profile = profileId ? agentProfile(profileId) : undefined;
+      if (profileId && !profile) return;
+      if (profile && profile.harness !== current.harness) {
+        const plan = planComposerSwitch(current, profile.harness);
+        if (plan.kind === "empty") {
+          void forgetHarnessSession(plan.forget, sessionId);
+        }
+      }
+      setSessions((prev) =>
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          return profile
+            ? applyAgentProfile({ ...s, pendingSwitch: undefined }, profile)
+            : clearAgentProfile(s);
+        }),
+      );
+    },
+    [],
+  );
+
   const onModelSettingsChange = useCallback(
     (sessionId: string, modelSettings: Record<string, string>) => {
       saveLastModelSettings(modelSettings);
@@ -10516,6 +10548,10 @@ function Workspace({
     () => openSettings("worktrees"),
     [openSettings],
   );
+  const onManageProfiles = useCallback(
+    () => openSettings("profiles"),
+    [openSettings],
+  );
 
   const sessionPaneProps = {
     recents,
@@ -10530,6 +10566,8 @@ function Workspace({
     onWorktreeBaseChange,
     onManageWorktrees,
     onModelChange,
+    onProfileChange,
+    onManageProfiles,
     onModelSettingsChange,
     onRuntimeModeChange,
     onSaveDraft,
@@ -11233,6 +11271,7 @@ function toTitleTab(
   const busyHarnesses: HarnessId[] = [];
   const doneSeen = new Set<HarnessId>();
   const doneHarnesses: HarnessId[] = [];
+  const harnessProfileColors: Partial<Record<HarnessId, string>> = {};
   const ordered = focused
     ? [focused, ...tabSessions.filter((session) => session.id !== focused.id)]
     : tabSessions;
@@ -11252,6 +11291,8 @@ function toTitleTab(
     if (seen.has(session.harness)) continue;
     seen.add(session.harness);
     harnesses.push(session.harness);
+    if (session.profile)
+      harnessProfileColors[session.harness] = profileColor(session.profile);
   }
 
   const files: string[] = [];
@@ -11314,6 +11355,9 @@ function toTitleTab(
     harnesses,
     busyHarnesses,
     doneHarnesses,
+    ...(Object.keys(harnessProfileColors).length
+      ? { harnessProfileColors }
+      : {}),
     files,
     multiPane,
     fileFocused,
