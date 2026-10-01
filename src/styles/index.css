@@ -1507,11 +1507,40 @@ html.has-user-accent .primary-action:disabled {
   app-region: no-drag;
 }
 
-/* Window drag regions use a grab cursor; keep title-bar controls on the arrow. */
+/* Window drag regions use a grab cursor; keep title-bar chrome on the arrow
+   and its controls on the pointer. */
 header[data-tauri-drag-region] [data-tauri-drag-region="false"],
-header[data-tauri-drag-region] [data-tauri-drag-region="false"] *,
-header[data-tauri-drag-region] button {
+header[data-tauri-drag-region] [data-tauri-drag-region="false"] * {
   cursor: default !important;
+}
+
+header[data-tauri-drag-region] button:not(:disabled),
+header[data-tauri-drag-region] button:not(:disabled) * {
+  cursor: pointer !important;
+}
+
+/* Everything clickable shows the pointer. Base layer, so a component that
+   asks for another cursor (grab, text, default) still wins. */
+@layer base {
+  button:not(:disabled),
+  select:not(:disabled),
+  summary,
+  a[href],
+  label:has(> input:is([type="checkbox"], [type="radio"])),
+  :is(
+      [role="button"],
+      [role="option"],
+      [role="menuitem"],
+      [role="menuitemradio"],
+      [role="menuitemcheckbox"],
+      [role="tab"],
+      [role="radio"],
+      [role="switch"],
+      [role="checkbox"],
+      [role="treeitem"]
+    ):not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
 }
 
 .material-icon svg {
