@@ -20,6 +20,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
@@ -34,6 +35,7 @@ import {
 } from "../../shared/hooks/useAnimatedReorder";
 import { useTabCloseMotion } from "../../features/workspace/hooks/useTabCloseMotion";
 import { TabWidthMotion } from "./ClosingTab";
+import { CLOSE_SLIDE, OPEN_SLIDE } from "./useWidthReveal";
 import { FileTypeIcon } from "../../features/files/ui/FileTypeIcon";
 import { HarnessIcon } from "../../features/sessions/ui/HarnessIcon";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -612,6 +614,18 @@ export function OverlayNav({
   );
 }
 
+/**
+ * Room the title bar keeps for the traffic lights, eased like the panel slide
+ * so it shrinks as a panel opens and grows as the last one shuts.
+ */
+function trafficLightRoom(needed: boolean): CSSProperties {
+  const slide = needed ? CLOSE_SLIDE : OPEN_SLIDE;
+  return {
+    width: needed ? 70 : 0,
+    transition: `width ${slide.duration}ms ${slide.easing}`,
+  };
+}
+
 function TitleBarComponent({
   tabs,
   activeId,
@@ -942,11 +956,16 @@ function TitleBarComponent({
         </>
       ) : null}
       {/* An open session sidebar already clears the traffic lights, so the
-          title bar only makes room for them once both panels are closed. */}
+          title bar only makes room for them once both panels are closed. The
+          room grows and shrinks with the panels' slide, so nothing passes
+          under the traffic lights while one is still narrow. */}
       {!projectless && onToggleSessionSidebar ? (
         <div className="flex shrink-0 items-center px-1.5">
-          {IS_MAC && railClosed && !compactRail && !sessionSidebarOpen ? (
-            <div className="w-[70px] shrink-0" />
+          {IS_MAC && !compactRail ? (
+            <div
+              className="shrink-0 motion-reduce:transition-none!"
+              style={trafficLightRoom(railClosed && !sessionSidebarOpen)}
+            />
           ) : null}
           <IconButton
             label={`Toggle Session Sidebar (${MOD}${SHIFT}B)`}
