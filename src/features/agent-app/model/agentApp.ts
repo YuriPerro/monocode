@@ -448,6 +448,7 @@ export async function handleAgentApp(
       else await host.start(launch, id);
       return {
         id,
+        requestId,
         cwd: launch.cwd,
         harness: launch.harness,
         model: launch.model,
