@@ -474,6 +474,28 @@ fn usage_error(status: u16) -> ClaudeUsageFetch {
 }
 
 fn read_claude_credentials(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
+    if config_dir.is_some() {
+        return read_profile_credentials(config_dir);
+    }
+    // The default account is whatever `claude` resolves to. Wrappers and
+    // shells often export CLAUDE_CONFIG_DIR=~/.claude, which stores the same
+    // profile under a suffixed Keychain item, so read both and keep the one
+    // that was refreshed last.
+    let home_profile = dirs_home().map(|home| PathBuf::from(home).join(".claude"));
+    freshest(
+        read_profile_credentials(None).into_iter().chain(
+            home_profile
+                .as_deref()
+                .and_then(|dir| read_profile_credentials(Some(dir))),
+        ),
+    )
+}
+
+fn freshest(credentials: impl Iterator<Item = ClaudeCredentials>) -> Option<ClaudeCredentials> {
+    credentials.max_by_key(|creds| creds.expires_at_ms.unwrap_or(i64::MIN))
+}
+
+fn read_profile_credentials(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
     #[cfg(target_os = "macos")]
     {
         let service = claude_keychain_service(config_dir);
@@ -765,6 +787,25 @@ mod tests {
             extract_opencode_go_api_key(raw).as_deref(),
             Some("sk-go-abc")
         );
+    }
+
+    #[test]
+    fn default_account_prefers_the_most_recently_refreshed_sign_in() {
+        let creds = |token: &str, expires_at_ms| ClaudeCredentials {
+            access_token: token.into(),
+            expires_at_ms,
+        };
+        let picked = freshest(
+            [
+                creds("stale", Some(1)),
+                creds("fresh", Some(2)),
+                creds("unknown", None),
+            ]
+            .into_iter(),
+        )
+        .unwrap();
+        assert_eq!(picked.access_token, "fresh");
+        assert!(freshest(std::iter::empty()).is_none());
     }
 
     #[test]
