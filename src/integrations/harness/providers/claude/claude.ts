@@ -1,6 +1,7 @@
 import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import type {
+  BackgroundAgent,
   RuntimeMode,
   TaskListItem,
   TaskListMeta,
@@ -118,6 +119,9 @@ type LiveAgentTask = {
   toolUseId?: string;
   description: string;
   backgrounded: boolean;
+  startedAt: number;
+  /** Latest progress Claude reported for it. */
+  activity?: string;
 };
 
 type BackgroundTask = {
@@ -153,6 +157,8 @@ type Live = {
   awaitingResume: ReturnType<typeof setTimeout> | null;
   /** Last background list sent to the UI, to skip repeats. */
   backgroundKey: string;
+  /** Last background agent list sent to the UI, to skip repeats. */
+  backgroundAgentsKey: string;
   /** Finished-subagent notes held until Claude picks the thread back up. */
   taskNotes: string[];
   /** TaskCreate/TaskUpdate items, keyed by Claude's task id. */
@@ -493,6 +499,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
     backgroundRows: new Map(),
     awaitingResume: null,
     backgroundKey: "",
+    backgroundAgentsKey: "",
     taskNotes: [],
     claudeTasks,
     turnResultSeen: false,
@@ -591,6 +598,7 @@ async function runTurn(live: Live, input: SendTurnInput): Promise<void> {
   live.backgroundRows.clear();
   clearAwaitingResume(live);
   live.backgroundKey = "";
+  live.backgroundAgentsKey = "";
   live.taskNotes = [];
   live.turnResultSeen = false;
 
@@ -700,7 +708,10 @@ function handleLine(sessionId: string, live: Live, line: string): void {
     return;
   }
 
-  if (handleAgentLifecycle(live, rec)) return;
+  if (handleAgentLifecycle(live, rec)) {
+    syncBackgroundAgents(live);
+    return;
+  }
   if (type === "tool_progress") {
     handleToolProgress(live, rec);
     return;
@@ -1206,11 +1217,15 @@ function handleAgentLifecycle(
     });
     syncBackgroundWait(live);
     if (!isAgentTaskType(started.taskType)) return true;
+    // The task list often names the task first; it started back then.
+    const listed = live.agentTasks.get(started.taskId);
     live.agentTasks.set(started.taskId, {
       taskId: started.taskId,
       toolUseId: started.toolUseId,
       description: started.description,
       backgrounded: started.backgrounded,
+      startedAt: listed?.startedAt ?? Date.now(),
+      ...(listed?.activity ? { activity: listed.activity } : {}),
     });
     upsertAgentTool(
       live,
@@ -1224,6 +1239,8 @@ function handleAgentLifecycle(
   const progress = parseTaskProgress(rec);
   if (progress) {
     const task = live.agentTasks.get(progress.taskId);
+    const activity = progress.summary || progress.lastToolName;
+    if (task && activity) task.activity = activity;
     const title = progress.description || task?.description || "Subagent";
     const detail =
       progress.summary ||
@@ -1312,6 +1329,7 @@ function handleAgentLifecycle(
       toolUseId,
       description: row.description,
       backgrounded: true,
+      startedAt: Date.now(),
     });
     upsertAgentTool(live, toolUseId, row.description, "in_progress");
   }
@@ -1692,6 +1710,27 @@ function syncBackgroundWait(live: Live): void {
   live.backgroundKey = key;
   if (live.muteUpdates) return;
   live.onEvent({ type: "background.updated", tasks: waiting });
+}
+
+/**
+ * Tells the UI which subagents are running in the background, from the
+ * moment Claude sends one off rather than only once it has yielded. Agents
+ * that run inline already have a live row in the transcript.
+ */
+function syncBackgroundAgents(live: Live): void {
+  const agents: BackgroundAgent[] = [...live.agentTasks.values()]
+    .filter((task) => task.backgrounded)
+    .map((task) => ({
+      id: task.taskId,
+      description: task.description,
+      startedAt: task.startedAt,
+      ...(task.activity ? { activity: task.activity } : {}),
+    }));
+  const key = agents.length > 0 ? JSON.stringify(agents) : "";
+  if (key === live.backgroundAgentsKey) return;
+  live.backgroundAgentsKey = key;
+  if (live.muteUpdates) return;
+  live.onEvent({ type: "background.agents", agents });
 }
 
 function maybeFinishTurn(live: Live): void {

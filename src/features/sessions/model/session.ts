@@ -271,6 +271,17 @@ export type UsageLimit = {
   resumeAtReset?: boolean;
 };
 
+/** A subagent the agent sent to the background that is still running. */
+export type BackgroundAgent = {
+  /** Provider task id. */
+  id: string;
+  description: string;
+  /** Epoch ms when the subagent started. */
+  startedAt: number;
+  /** What it is doing now, when the provider reports it. */
+  activity?: string;
+};
+
 /** Provider/model provenance captured when a user turn is submitted. */
 export type TurnModel = {
   harness: HarnessId;
@@ -416,6 +427,11 @@ export type Session = {
    * running in the background. In-memory only.
    */
   backgroundTasks?: string[];
+  /**
+   * Subagents running in the background, whether or not the agent has
+   * yielded. In-memory only.
+   */
+  backgroundAgents?: BackgroundAgent[];
   /** Follow-ups waiting for current turn. In-memory only. */
   queuedMessages?: QueuedMessage[];
   /** Paused after user stops current turn; resuming waits for continued turn. */

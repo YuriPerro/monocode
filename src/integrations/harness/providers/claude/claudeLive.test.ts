@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyHarnessEvent } from "../../core/apply";
+import {
+  appendUser,
+  applyHarnessEvent,
+  stopStreaming,
+} from "../../core/apply";
 import { newSession } from "../../../../features/sessions/model/session";
 import {
   foldableWork,
@@ -253,6 +257,43 @@ function backgroundUpdates(events: HarnessEvent[]): string[][] {
   return events.flatMap((event) =>
     event.type === "background.updated" ? [event.tasks] : [],
   );
+}
+
+function backgroundAgentUpdates(events: HarnessEvent[]) {
+  return events.flatMap((event) =>
+    event.type === "background.agents" ? [event.agents] : [],
+  );
+}
+
+/** An Agent call Claude sent to the background with `run_in_background`. */
+function emitBackgroundSubagent(taskId = "t1") {
+  emit({
+    type: "assistant",
+    session_id: "sess_1",
+    message: {
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_agent",
+          name: "Agent",
+          input: {
+            description: "Explore the auth module",
+            subagent_type: "explore",
+            run_in_background: true,
+          },
+        },
+      ],
+    },
+  });
+  emit({
+    type: "system",
+    subtype: "task_started",
+    task_id: taskId,
+    tool_use_id: "toolu_agent",
+    description: "Explore the auth module",
+    task_type: "local_agent",
+    is_backgrounded: true,
+  });
 }
 
 beforeEach(() => {
@@ -1819,6 +1860,173 @@ describe("claude background tasks", () => {
     expect(events.some((event) => event.type === "message.completed")).toBe(
       true,
     );
+  });
+});
+
+describe("claude background agents", () => {
+  it("reports a backgrounded subagent from launch until it finishes", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { events, turn } = await startTurn("s1");
+      emitBackgroundSubagent();
+      const agent = {
+        id: "t1",
+        description: "Explore the auth module",
+        startedAt: 1_000,
+      };
+      expect(backgroundAgentUpdates(events)).toEqual([[agent]]);
+
+      for (const progress of [
+        { last_tool_name: "Read" },
+        { last_tool_name: "Read" },
+        { summary: "Reading the auth module" },
+        {},
+      ]) {
+        emit({
+          type: "system",
+          subtype: "task_progress",
+          task_id: "t1",
+          description: "Explore the auth module",
+          ...progress,
+        });
+      }
+      // A repeat, or progress that names nothing, sends nothing new.
+      expect(backgroundAgentUpdates(events)).toEqual([
+        [agent],
+        [{ ...agent, activity: "Read" }],
+        [{ ...agent, activity: "Reading the auth module" }],
+      ]);
+
+      emit({
+        type: "user",
+        session_id: "sess_1",
+        message: {
+          content: [
+            {
+              type: "tool_result",
+              tool_use_id: "toolu_agent",
+              content: "Backgrounded",
+            },
+          ],
+        },
+      });
+      emit({ type: "result", subtype: "success", session_id: "sess_1" });
+      expect(backgroundAgentUpdates(events)).toHaveLength(3);
+
+      emit({
+        type: "system",
+        subtype: "task_notification",
+        task_id: "t1",
+        tool_use_id: "toolu_agent",
+        status: "completed",
+        summary: "Found the tokens",
+      });
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([]);
+      emitFollowUpTurn("The explorer found the tokens.");
+      await turn;
+
+      expect(backgroundAgentUpdates(events)).toHaveLength(4);
+      const session = events.reduce(
+        applyHarnessEvent,
+        newSession("claude", "/repo"),
+      );
+      expect(session.backgroundAgents).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("leaves a subagent that ran inline off the list", async () => {
+    const { events, turn } = await startTurn("s1");
+    emitInlineSubagent();
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    await turn;
+    expect(backgroundAgentUpdates(events)).toEqual([]);
+  });
+
+  it("counts a listed agent once and one moved to the background later", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { events, turn } = await startTurn("s1");
+      emit({
+        type: "system",
+        subtype: "background_tasks_changed",
+        tasks: [
+          {
+            task_id: "t1",
+            task_type: "local_agent",
+            description: "Explore the auth module",
+          },
+        ],
+      });
+      clock.mockReturnValue(5_000);
+      // task_started for a listed task keeps the time it was first seen.
+      emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "t1",
+        description: "Explore the auth module",
+        task_type: "local_agent",
+        is_backgrounded: true,
+      });
+      emit({
+        type: "system",
+        subtype: "task_started",
+        task_id: "t2",
+        description: "Review the tests",
+        task_type: "local_agent",
+        is_backgrounded: false,
+      });
+      const first = {
+        id: "t1",
+        description: "Explore the auth module",
+        startedAt: 1_000,
+      };
+      expect(backgroundAgentUpdates(events)).toEqual([[first]]);
+
+      emit({
+        type: "system",
+        subtype: "task_updated",
+        task_id: "t2",
+        patch: { is_backgrounded: true },
+      });
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([
+        first,
+        { id: "t2", description: "Review the tests", startedAt: 5_000 },
+      ]);
+
+      emit({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+      expect(backgroundAgentUpdates(events)).toHaveLength(3);
+      expect(backgroundAgentUpdates(events).at(-1)).toEqual([]);
+      emit({ type: "result", subtype: "success", session_id: "sess_1" });
+      await turn;
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("goes quiet when the turn is stopped, and the stopped session shows none", async () => {
+    const { events, turn } = await startTurn("s1");
+    emitBackgroundSubagent();
+    expect(backgroundAgentUpdates(events)).toHaveLength(1);
+
+    await cancelClaudeTurn("s1");
+    await turn;
+    emit({
+      type: "system",
+      subtype: "task_progress",
+      task_id: "t1",
+      description: "Explore the auth module",
+      last_tool_name: "Grep",
+    });
+    expect(backgroundAgentUpdates(events)).toHaveLength(1);
+
+    const running = events.reduce(
+      applyHarnessEvent,
+      appendUser(newSession("claude", "/repo"), "explore the codebase"),
+    );
+    expect(running.backgroundAgents).toHaveLength(1);
+    expect(stopStreaming(running).backgroundAgents).toBeUndefined();
   });
 });
 

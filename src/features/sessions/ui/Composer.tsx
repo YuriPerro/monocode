@@ -77,6 +77,7 @@ import {
 } from "../../projects/model/recents";
 import type {
   Attachment,
+  BackgroundAgent,
   HarnessId,
   MessageQueueStatus,
   QueuedMessage,
@@ -111,6 +112,7 @@ import {
   type SlashToken,
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
+import { BackgroundAgentsChip } from "./BackgroundAgentsChip";
 import { ComposerRunner } from "./ComposerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
@@ -254,6 +256,7 @@ type Props = {
   queuedMessages?: QueuedMessage[];
   queueStatus?: MessageQueueStatus;
   usageLimit?: UsageLimit;
+  backgroundAgents?: BackgroundAgent[];
   hotkeys?: boolean;
   onFocus: () => void;
   onCwdChange: (cwd: string) => void;
@@ -549,6 +552,7 @@ export function Composer({
   queuedMessages = [],
   queueStatus,
   usageLimit,
+  backgroundAgents,
   onFocus,
   onCwdChange,
   onBranchChange,
@@ -2642,6 +2646,9 @@ export function Composer({
                     onChange={onRuntimeModeChange}
                     onClose={() => ref.current?.focus()}
                   />
+                ) : null}
+                {backgroundAgents?.length ? (
+                  <BackgroundAgentsChip agents={backgroundAgents} />
                 ) : null}
               </div>
             </div>

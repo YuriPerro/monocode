@@ -47,6 +47,49 @@ describe("background work", () => {
     session = stopStreaming(session);
     expect(session.backgroundTasks).toBeUndefined();
   });
+
+  it("lists running background agents and drops them when none are left or the turn ends", () => {
+    let session = appendUser(newSession("claude", "/tmp"), "hi");
+    const agent = {
+      id: "t1",
+      description: "Explore the auth module",
+      startedAt: 1_000,
+    };
+    session = applyHarnessEvent(session, {
+      type: "background.agents",
+      agents: [agent],
+    });
+    expect(session.backgroundAgents).toEqual([agent]);
+    // Running agents alone do not mean the agent yielded; follow-ups still
+    // queue rather than steer.
+    expect(session.backgroundTasks).toBeUndefined();
+
+    session = applyHarnessEvent(session, {
+      type: "background.agents",
+      agents: [{ ...agent, activity: "Read" }],
+    });
+    expect(session.backgroundAgents).toEqual([{ ...agent, activity: "Read" }]);
+
+    session = applyHarnessEvent(session, {
+      type: "background.agents",
+      agents: [],
+    });
+    expect("backgroundAgents" in session).toBe(false);
+
+    session = applyHarnessEvent(session, {
+      type: "background.agents",
+      agents: [agent],
+    });
+    session = stopStreaming(session);
+    expect(session.backgroundAgents).toBeUndefined();
+  });
+
+  it("leaves the session as is when an empty agent list clears nothing", () => {
+    const session = appendUser(newSession("claude", "/tmp"), "hi");
+    expect(
+      applyHarnessEvent(session, { type: "background.agents", agents: [] }),
+    ).toBe(session);
+  });
 });
 
 describe("turn duration", () => {
