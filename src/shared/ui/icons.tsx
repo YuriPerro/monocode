@@ -114,6 +114,7 @@ import ServerStack01Icon from "@hugeicons/core-free-icons/ServerStack01Icon";
 import Target01Icon from "@hugeicons/core-free-icons/Target01Icon";
 import TestTube01Icon from "@hugeicons/core-free-icons/TestTube01Icon";
 import UserMultipleIcon from "@hugeicons/core-free-icons/UserMultipleIcon";
+import UserCircleIcon from "@hugeicons/core-free-icons/UserCircleIcon";
 import { forwardRef, type Ref } from "react";
 
 /** Props shared by every chrome icon. `icon` is filled in by the named wrappers. */
@@ -299,3 +300,4 @@ export const Server = wrap(ServerStack01Icon, "Server");
 export const Target = wrap(Target01Icon, "Target");
 export const TestTube = wrap(TestTube01Icon, "TestTube");
 export const Users = wrap(UserMultipleIcon, "Users");
+export const UserCircle = wrap(UserCircleIcon, "UserCircle");

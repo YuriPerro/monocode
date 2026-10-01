@@ -23,6 +23,11 @@ import {
   type AgentProfile,
 } from "../model/profiles";
 import { PROFILE_INSTRUCTIONS_MAX } from "../model/sessionProfile";
+import {
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
+import { ProfileAccountPicker } from "./ProfileAccountPicker";
 import { PROFILE_ICONS, profileColorStyle, ProfileGlyph } from "./ProfileGlyph";
 import { useAgentProfiles } from "./useAgentProfiles";
 
@@ -393,6 +398,10 @@ function ProfileEditor({
                   ...profile,
                   harness: resolved.harness,
                   model: resolved.id,
+                  providerAccountId:
+                    resolved.harness === profile.harness
+                      ? profile.providerAccountId
+                      : undefined,
                   modelSettings: mergeModelSettings(
                     resolved,
                     profile.modelSettings,
@@ -407,6 +416,16 @@ function ProfileEditor({
               <AccessPicker
                 value={profile.runtimeMode}
                 onChange={(runtimeMode) => update("runtimeMode", runtimeMode)}
+              />
+            ) : null}
+            {supportsProviderAccounts(profile.harness) &&
+            providerAccounts(profile.harness).length > 1 ? (
+              <ProfileAccountPicker
+                accounts={providerAccounts(profile.harness)}
+                value={profile.providerAccountId}
+                onChange={(providerAccountId) =>
+                  update("providerAccountId", providerAccountId)
+                }
               />
             ) : null}
           </div>

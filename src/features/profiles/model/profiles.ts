@@ -1,4 +1,8 @@
 import { mergeModelSettings, resolveModel } from "../../sessions/model/models";
+import {
+  providerAccountExists,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import { beforeFirstUserTurn } from "./profileInstructions";
 import {
   cleanColor,
@@ -32,6 +36,8 @@ export type AgentProfile = {
   model: string;
   modelSettings: Record<string, string>;
   runtimeMode: RuntimeMode;
+  /** Claude or Codex account the profile always uses; absent follows the project. */
+  providerAccountId?: string;
   instructions: string;
 };
 
@@ -137,6 +143,16 @@ export function sessionProfile(profile: AgentProfile): SessionProfile {
   };
 }
 
+/** The profile's account, when its provider still has it. */
+export function profileAccountId(profile: AgentProfile): string | undefined {
+  const id = profile.providerAccountId;
+  return id &&
+    supportsProviderAccounts(profile.harness) &&
+    providerAccountExists(profile.harness, id)
+    ? id
+    : undefined;
+}
+
 /** The part of a profile a session keeps once it starts. */
 export function profileLaunch(profile: AgentProfile): {
   profile: SessionProfile;
@@ -164,6 +180,11 @@ export function applyAgentProfile<T extends Session>(
     model: model.id,
     modelSettings: mergeModelSettings(model, profile.modelSettings),
     runtimeMode: profile.runtimeMode,
+    providerAccountId:
+      profileAccountId(profile) ??
+      (profile.harness === session.harness
+        ? session.providerAccountId
+        : undefined),
     profileInstructions: undefined,
     ...profileLaunch(profile),
   };
@@ -214,6 +235,9 @@ function cleanProfile(value: unknown): AgentProfile | undefined {
     model: value.model.trim(),
     modelSettings: cleanSettings(value.modelSettings),
     runtimeMode,
+    ...(validId(value.providerAccountId)
+      ? { providerAccountId: value.providerAccountId }
+      : {}),
     instructions:
       typeof value.instructions === "string"
         ? value.instructions.slice(0, PROFILE_INSTRUCTIONS_MAX)

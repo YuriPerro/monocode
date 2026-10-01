@@ -81,6 +81,9 @@ export async function acceptQuickLaunch(
     session.profile = launch.profile;
     session.profileInstructions = launch.profileInstructions;
   }
+  if (!existing && launch.providerAccountId) {
+    session.providerAccountId = launch.providerAccountId;
+  }
   if (launch.modelSettings) {
     session.modelSettings = mergeModelSettings(
       resolveModel(session.harness, session.model),

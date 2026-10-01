@@ -36,8 +36,13 @@ import {
   sessionConversationTurn,
 } from "./sessionConversation";
 import {
+  providerAccountLabel,
+  type ProviderAccountProvider,
+} from "../../providers/model/providerAccounts";
+import {
   agentProfiles,
   findAgentProfile,
+  profileAccountId,
   profileLaunch,
 } from "../../profiles/model/profiles";
 
@@ -310,6 +315,9 @@ function startLaunch(
       : {}),
     ...(worktreeBase ? { worktreeBase } : {}),
     ...(profile ? profileLaunch(profile) : {}),
+    ...(profile?.harness === chosenHarness && profileAccountId(profile)
+      ? { providerAccountId: profileAccountId(profile) }
+      : {}),
   };
 }
 
@@ -351,6 +359,14 @@ export async function handleAgentApp(
           runtimeMode: profile.runtimeMode,
           available: isHarnessAvailable(profile.harness),
           hasInstructions: !!profile.instructions.trim(),
+          ...(profileAccountId(profile)
+            ? {
+                account: providerAccountLabel(
+                  profile.harness as ProviderAccountProvider,
+                  profileAccountId(profile),
+                ),
+              }
+            : {}),
         })),
       };
     case "sessions.list":

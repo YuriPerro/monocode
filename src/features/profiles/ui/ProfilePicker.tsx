@@ -14,7 +14,11 @@ import { Popover } from "../../../shared/ui/Popover";
 import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { resolveModel } from "../../sessions/model/models";
 import type { SessionProfile } from "../../sessions/model/session";
-import type { AgentProfile } from "../model/profiles";
+import { profileAccountId, type AgentProfile } from "../model/profiles";
+import {
+  providerAccountLabel,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import { profileColorStyle, ProfileGlyph } from "./ProfileGlyph";
 
 const MENU_WIDTH = 300;
@@ -219,6 +223,10 @@ export function ProfilePicker({
                     />
                     <span className="truncate text-[11px] text-content/40">
                       {resolveModel(profile.harness, profile.model).name}
+                      {profileAccountId(profile) &&
+                      supportsProviderAccounts(profile.harness)
+                        ? ` · ${providerAccountLabel(profile.harness, profileAccountId(profile))}`
+                        : ""}
                     </span>
                   </span>
                   {profile.description ? (

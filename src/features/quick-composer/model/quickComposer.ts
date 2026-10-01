@@ -73,6 +73,8 @@ export type QuickLaunch = {
   /** Agent profile the new session starts as. */
   profile?: SessionProfile;
   profileInstructions?: string;
+  /** Claude or Codex account the new session is pinned to. */
+  providerAccountId?: string;
 };
 
 /** The panel exists on macOS only; elsewhere the shortcut is never claimed. */

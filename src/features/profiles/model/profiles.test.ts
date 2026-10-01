@@ -9,10 +9,16 @@ import {
   moveAgentProfile,
   newAgentProfile,
   removeAgentProfile,
+  profileAccountId,
   saveAgentProfile,
   withCurrentProfile,
   type AgentProfile,
 } from "./profiles";
+import {
+  newProviderAccount,
+  removeProviderAccount,
+  saveProviderAccount,
+} from "../../providers/model/providerAccounts";
 import {
   beforeFirstUserTurn,
   nativeProfileInstructions,
@@ -129,6 +135,27 @@ describe("agent profiles", () => {
       blocks: [{ id: "u", role: "user" as const, text: "hello" }],
     };
     expect(withCurrentProfile(started)).toBe(started);
+  });
+
+  it("pins the session to the profile's account while the account exists", () => {
+    const team = newProviderAccount("codex", "Team");
+    saveProviderAccount(team);
+    const pinned = profile({ providerAccountId: team.id });
+    const fresh = newSession("codex", "/tmp/project");
+    expect(applyAgentProfile(fresh, pinned).providerAccountId).toBe(team.id);
+    expect(
+      applyAgentProfile({ ...fresh, providerAccountId: "default" }, profile())
+        .providerAccountId,
+    ).toBe("default");
+    expect(
+      applyAgentProfile(
+        { ...newSession("claude", "/tmp/project"), providerAccountId: "x" },
+        profile(),
+      ).providerAccountId,
+    ).toBeUndefined();
+    removeProviderAccount("codex", team.id);
+    expect(profileAccountId(pinned)).toBeUndefined();
+    expect(applyAgentProfile(fresh, pinned).providerAccountId).toBeUndefined();
   });
 
   it("restores only a valid session profile snapshot", () => {
