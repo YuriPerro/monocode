@@ -2162,6 +2162,74 @@ button.profile-chip:hover {
   opacity: 0;
 }
 
+/* Asleep between turns: the rest frame, a slow one-pixel breath, and pixel
+   Zs drifting up. CSS only, so an idle composer runs no frame loop. */
+.mascot-asleep .mascot-active {
+  animation: mascot-hop 2400ms infinite;
+}
+
+.mascot-asleep .mascot-rest {
+  animation: none;
+  opacity: 1;
+}
+
+.mascot-asleep .mascot-talk {
+  animation: none;
+  opacity: 0;
+}
+
+.composer-zzz > * {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  opacity: 0;
+  animation:
+    composer-zzz-rise 2700ms steps(9, end) infinite,
+    composer-zzz-fade 2700ms linear infinite;
+}
+
+.composer-zzz > :nth-child(2) {
+  animation-delay: 900ms;
+}
+
+.composer-zzz > :nth-child(3) {
+  animation-delay: 1800ms;
+}
+
+/* Whole-pixel steps up and to the right, like the sprite itself. */
+@keyframes composer-zzz-rise {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(9px, -18px);
+  }
+}
+
+@keyframes composer-zzz-fade {
+  0% {
+    opacity: 0;
+  }
+  15%,
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot-asleep .mascot-active,
+  .composer-zzz > * {
+    animation: none;
+  }
+
+  .composer-zzz > :first-child {
+    opacity: 1;
+  }
+}
+
 @keyframes shimmer-text {
   from {
     background-position: 100% center;

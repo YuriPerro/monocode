@@ -114,6 +114,7 @@ import {
 import { AccessPicker } from "./AccessPicker";
 import { BackgroundAgentsChip } from "./BackgroundAgentsChip";
 import { ComposerRunner } from "./ComposerRunner";
+import type { RunnerSignal } from "../model/composerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
@@ -236,6 +237,8 @@ type Props = {
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
   hideTopBar?: boolean;
+  /** Keep the composer mascot off, e.g. while a sheet covers this composer. */
+  hideRunner?: boolean;
   /** Keeps local file mentions, skills, and app modes off for host sessions. */
   remoteSession?: boolean;
   remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean };
@@ -249,6 +252,8 @@ type Props = {
   handoffCard?: HandoffComposerCard;
   question?: UserQuestionPrompt;
   busy?: boolean;
+  /** Session cues for the composer mascot: input pending, how the turn ended. */
+  runnerSignal?: RunnerSignal;
   /** Allow typed text to replace Stop with Send while a turn is running. */
   allowBusySubmit?: boolean;
   editLastTurnSupported?: boolean;
@@ -534,6 +539,7 @@ export function Composer({
   hideProjectPicker = false,
   hideBranchPicker = false,
   hideTopBar = false,
+  hideRunner = false,
   remoteSession = false,
   remoteFeatures,
   context,
@@ -546,6 +552,7 @@ export function Composer({
   handoffCard,
   question,
   busy = false,
+  runnerSignal,
   allowBusySubmit = true,
   editLastTurnSupported = false,
   lastTurnRecall = null,
@@ -697,9 +704,6 @@ export function Composer({
   const [mentionActive, setMentionActive] = useState(0);
   const [resendEdited, setResendEdited] = useState(false);
   const [runnerEnabled, setRunnerEnabled] = useState(loadComposerRunner);
-  const [runnerLive, setRunnerLive] = useState(
-    () => busy && loadComposerRunner(),
-  );
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
 
@@ -949,14 +953,6 @@ export function Composer({
     return () =>
       window.removeEventListener(COMPOSER_RUNNER_CHANGE_EVENT, refresh);
   }, []);
-
-  useEffect(() => {
-    if (!runnerEnabled) {
-      setRunnerLive(false);
-      return;
-    }
-    if (busy) setRunnerLive(true);
-  }, [busy, runnerEnabled]);
 
   useEffect(() => {
     setSkillActive(0);
@@ -2666,7 +2662,10 @@ export function Composer({
                 <span>Cancel edit</span>
               </button>
             ) : null}
-            <div className="flex shrink-0 items-center gap-1">
+            <div
+              data-composer-action
+              className="flex shrink-0 items-center gap-1"
+            >
               <ComposerAction
                 busy={busy}
                 disabled={disabled}
@@ -2679,13 +2678,12 @@ export function Composer({
             </div>
           </div>
         </div>
-        {runnerLive && runnerEnabled && !remote ? (
+        {runnerEnabled && enabled && !remote && !hideRunner ? (
           <ComposerRunner
             boxRef={boxRef}
             cwd={cwd}
             busy={busy}
-            enabled={enabled}
-            onExited={() => setRunnerLive(false)}
+            signal={runnerSignal}
           />
         ) : null}
       </div>
