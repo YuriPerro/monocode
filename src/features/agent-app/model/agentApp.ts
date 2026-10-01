@@ -381,9 +381,11 @@ export async function handleAgentApp(
           const target = await host.session(id);
           if (!target) throw new Error("Session was not found in this project");
           const turn = sessionConversationTurn(target, appRequestId, maxChars);
-          const latest = sessionConversationTurn(target, undefined, maxChars);
           const settled = appRequestId
-            ? !!turn && (!target.busy || latest?.turnId !== turn.turnId)
+            ? !!turn &&
+              (!target.busy ||
+                sessionConversationTurn(target, undefined, maxChars)?.turnId !==
+                  turn.turnId)
             : !target.busy;
           if (settled || Date.now() >= deadline)
             return { sessionId: id, settled, busy: !!target.busy, turn };
