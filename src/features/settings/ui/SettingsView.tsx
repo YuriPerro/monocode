@@ -3347,6 +3347,24 @@ function ProviderAccountsSettings() {
   );
   const usage = useProviderAccountUsage(version);
 
+  const signIn = async (account: ProviderAccount) => {
+    if (working) return;
+    setWorking(`login:${account.provider}:${account.id}`);
+    setError(null);
+    try {
+      await loginHarness(account.provider, account.id);
+      usage.refresh();
+    } catch (caught) {
+      setError(
+        caught instanceof Error
+          ? caught.message
+          : `Could not sign in to ${account.label}`,
+      );
+    } finally {
+      setWorking(null);
+    }
+  };
+
   return (
     <Group
       id="provider-accounts"
@@ -3442,6 +3460,21 @@ function ProviderAccountsSettings() {
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
+                    {limits?.signInRequired ? (
+                      <button
+                        type="button"
+                        disabled={Boolean(working)}
+                        aria-label={`Sign in to ${account.label}`}
+                        title="Open the provider sign-in in your browser"
+                        onClick={() => void signIn(account)}
+                        className="flex h-6.5 shrink-0 items-center gap-1.5 rounded-md border border-content/15 px-2.5 text-[11px] text-content/80 transition-transform duration-150 hover:border-content/30 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-40"
+                      >
+                        {working === `login:${provider}:${account.id}` ? (
+                          <Loader className="size-3 animate-spin" />
+                        ) : null}
+                        Sign in
+                      </button>
+                    ) : null}
                     <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
                         <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
