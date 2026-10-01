@@ -1037,10 +1037,20 @@ fn apply_provider_account(
     cmd: &mut Command,
     account: Option<&HarnessAccount>,
 ) -> Result<(), String> {
+    // The default account is Claude's own default profile. A config or
+    // Keychain selector inherited from a terminal that launched MonoCode would
+    // send its sign-in and turns to another profile, while usage reads the
+    // default one.
+    let default_profile = |cmd: &mut Command| {
+        cmd.env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CLAUDE_SECURESTORAGE_CONFIG_DIR");
+    };
     let Some(account) = account else {
+        default_profile(cmd);
         return Ok(());
     };
     let Some(dir) = provider_account_dir(app, &account.provider, Some(&account.id))? else {
+        default_profile(cmd);
         return Ok(());
     };
     match account.provider.as_str() {

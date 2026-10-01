@@ -3430,7 +3430,7 @@ function ProviderAccountsSettings() {
                 ) : (
                   <div
                     key={account.id}
-                    className="flex h-12 items-center gap-3 border-b border-content/5 px-4 py-2 last:border-b-0"
+                    className="group/account flex h-12 items-center gap-3 border-b border-content/5 px-4 py-2 last:border-b-0"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 items-center gap-1.5">
@@ -3460,21 +3460,24 @@ function ProviderAccountsSettings() {
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
-                    {limits?.signInRequired ? (
-                      <button
-                        type="button"
-                        disabled={Boolean(working)}
-                        aria-label={`Sign in to ${account.label}`}
-                        title="Open the provider sign-in in your browser"
-                        onClick={() => void signIn(account)}
-                        className="flex h-6.5 shrink-0 items-center gap-1.5 rounded-md border border-content/15 px-2.5 text-[11px] text-content/80 transition-transform duration-150 hover:border-content/30 hover:bg-content/10 hover:text-content active:scale-[0.96] disabled:opacity-40"
-                      >
-                        {working === `login:${provider}:${account.id}` ? (
-                          <Loader className="size-3 animate-spin" />
-                        ) : null}
-                        Sign in
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      disabled={Boolean(working)}
+                      aria-label={`Sign in to ${account.label}`}
+                      title="Open the provider sign-in in your browser for this account"
+                      onClick={() => void signIn(account)}
+                      className={`flex h-6.5 shrink-0 items-center gap-1.5 rounded-md border border-content/15 px-2.5 text-[11px] text-content/80 transition-[opacity,transform] duration-150 hover:border-content/30 hover:bg-content/10 hover:text-content focus-visible:opacity-100 active:scale-[0.96] disabled:opacity-40 ${
+                        limits?.signInRequired ||
+                        working === `login:${provider}:${account.id}`
+                          ? ""
+                          : "opacity-0 group-hover/account:opacity-100"
+                      }`}
+                    >
+                      {working === `login:${provider}:${account.id}` ? (
+                        <Loader className="size-3 animate-spin" />
+                      ) : null}
+                      {limits?.signInRequired ? "Sign in" : "Sign in again"}
+                    </button>
                     <div className="flex w-24 shrink-0 items-center justify-end gap-1">
                       {account.isDefault ? (
                         <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
