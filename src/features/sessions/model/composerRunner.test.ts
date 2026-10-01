@@ -33,6 +33,8 @@ import {
   sleepAlong,
   stepAlong,
   stepHome,
+  zzzLeft,
+  ZZZ_X,
   stunDone,
   stunShake,
   stunStars,
@@ -268,37 +270,85 @@ describe("composerRunner", () => {
     }
   });
 
-  it("sleeps at the end of the track away from the chevron", () => {
-    const end = 400 - RUNNER_INSET * 2;
-    expect(sleepAlong(400, null)).toBe(0);
-    expect(sleepAlong(400, { left: 188, right: 212, height: 42 })).toBe(0);
-    expect(sleepAlong(400, { left: 220, right: 244, height: 42 })).toBe(0);
-    expect(sleepAlong(400, { left: 40, right: 64, height: 42 })).toBe(end);
-    expect(sleepAlong(400, { left: 330, right: 354, height: 42 })).toBe(0);
-    expect(sleepAlong(8, null)).toBe(0);
+  it("sleeps centered on the send button's column", () => {
+    const track = { left: 100, top: 200, width: 400 };
+    const send = { left: 462, right: 488, top: 290, bottom: 316 };
+    expect(RUNNER_INSET + sleepAlong(track, null, send)).toBe(375);
+    expect(RUNNER_INSET + sleepAlong({ ...track, left: 90 }, null, send)).toBe(
+      385,
+    );
   });
 
-  it("runs home facing the corner and stops exactly on it", () => {
-    const out = stepHome(200, 1, 0, 500, 380);
-    expect(out).toEqual({ along: 120, facing: -1, home: false });
+  it("sleeps at the right end of the track without a send button", () => {
+    expect(sleepAlong({ left: 100, top: 200, width: 400 }, null, null)).toBe(
+      400 - RUNNER_INSET * 2,
+    );
+    expect(sleepAlong({ left: 100, top: 200, width: 8 }, null, null)).toBe(0);
+  });
 
-    const arrived = stepHome(40, -1, 0, 500, 380);
-    expect(arrived).toEqual({ along: 0, facing: -1, home: true });
+  it("keeps the send column inside the track", () => {
+    const track = { left: 100, top: 200, width: 400 };
+    const past = { left: 520, right: 546, top: 290, bottom: 316 };
+    expect(sleepAlong(track, null, past)).toBe(400 - RUNNER_INSET * 2);
+  });
 
-    const right = stepHome(370, -1, 380, 500, 380);
-    expect(right).toEqual({ along: 380, facing: 1, home: true });
+  it("keeps the send column when the chevron sits clear of it", () => {
+    const track = { left: 100, top: 200, width: 400 };
+    const send = { left: 462, right: 488, top: 290, bottom: 316 };
+    const chevron = { left: 188, right: 212, height: 42 };
+    expect(RUNNER_INSET + sleepAlong(track, chevron, send)).toBe(375);
+  });
 
-    expect(stepHome(0, -1, 0, 16, 380)).toEqual({
+  it("sleeps just left of a chevron that covers the send column", () => {
+    const track = { left: 100, top: 200, width: 400 };
+    const send = { left: 462, right: 488, top: 290, bottom: 316 };
+    const chevron = { left: 370, right: 394, height: 42 };
+    const x = RUNNER_INSET + sleepAlong(track, chevron, send);
+    expect(x + RUNNER_SIZE / 2).toBeLessThanOrEqual(chevron.left);
+    expect(x).toBe(360);
+  });
+
+  it("sleeps right of the chevron when there is no room left of it", () => {
+    const track = { left: 100, top: 200, width: 100 };
+    const send = { left: 107, right: 133, top: 290, bottom: 316 };
+    const chevron = { left: 12, right: 36, height: 42 };
+    const x = RUNNER_INSET + sleepAlong(track, chevron, send);
+    expect(x - RUNNER_SIZE / 2).toBeGreaterThanOrEqual(chevron.right);
+    expect(x).toBe(46);
+  });
+
+  it("runs home facing the sleep spot and stops exactly on it", () => {
+    expect(stepHome(200, 1, 0, 500, 380)).toEqual({
+      along: 120,
+      facing: -1,
+      home: false,
+    });
+    expect(stepHome(40, -1, 0, 500, 380)).toEqual({
       along: 0,
+      facing: -1,
+      home: true,
+    });
+    expect(stepHome(300, -1, 355, 500, 380)).toEqual({
+      along: 355,
+      facing: 1,
+      home: true,
+    });
+    expect(stepHome(100, 1, 355, 500, 380)).toEqual({
+      along: 180,
+      facing: 1,
+      home: false,
+    });
+    expect(stepHome(355, -1, 355, 16, 380)).toEqual({
+      along: 355,
       facing: -1,
       home: true,
     });
   });
 
-  it("keeps a sleeping mascot in its corner when the track resizes", () => {
-    const end = 380;
-    expect(scaleTrackX(end, end, 180)).toBeCloseTo(180);
-    expect(scaleTrackX(0, end, 180)).toBe(0);
+  it("shifts the sleep Zs left so they stay inside the track", () => {
+    expect(zzzLeft(375, 400)).toBe(375 - RUNNER_SIZE / 2 + ZZZ_X);
+    expect(zzzLeft(390, 400)).toBe(384);
+    expect(zzzLeft(4, 10)).toBe(0);
   });
 
   it("ignores a control that is not sitting on the top border", () => {

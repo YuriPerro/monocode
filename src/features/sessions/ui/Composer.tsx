@@ -2655,7 +2655,10 @@ export function Composer({
                 <span>Cancel edit</span>
               </button>
             ) : null}
-            <div className="flex shrink-0 items-center gap-1">
+            <div
+              data-composer-action
+              className="flex shrink-0 items-center gap-1"
+            >
               <ComposerAction
                 busy={busy}
                 disabled={disabled}

@@ -15,7 +15,6 @@ import {
   STAR_FACE_PATH,
   STAR_SIZE,
   ZZZ_GLYPHS,
-  ZZZ_X,
   ZZZ_Y,
   coinCollected,
   hitsChevron,
@@ -38,6 +37,7 @@ import {
   stunDone,
   stunShake,
   stunStars,
+  zzzLeft,
   QUIET_RUNNER_SIGNAL,
   type Coin,
   type Obstacle,
@@ -140,6 +140,7 @@ export function ComposerRunner({
     let geometryBox: HTMLElement | null = null;
     let cachedTrack: RunnerTrack | null = null;
     let cachedObstacle: Obstacle | null = null;
+    let cachedAction: DOMRect | null = null;
     const coins: LiveCoin[] = [];
     const reduced = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -303,6 +304,10 @@ export function ComposerRunner({
           },
           button?.getBoundingClientRect() ?? null,
         );
+        cachedAction =
+          box
+            .querySelector("[data-composer-action]")
+            ?.getBoundingClientRect() ?? null;
         geometryBox = box;
         geometryAt = now;
       }
@@ -327,11 +332,12 @@ export function ComposerRunner({
     };
 
     const placeAsleep = (track: RunnerTrack) => {
+      along = sleepAlong(track, cachedObstacle, cachedAction);
       const x = poseAt(along, facing, track.width, null).x;
       placeSprite(track.left, track.top, x, 0, facing);
       zzz.style.setProperty(
         "--zzz-x",
-        `${Math.round(track.left + x - RUNNER_SIZE / 2 + ZZZ_X)}px`,
+        `${Math.round(track.left + zzzLeft(x, track.width))}px`,
       );
       zzz.style.setProperty(
         "--zzz-y",
@@ -412,7 +418,7 @@ export function ComposerRunner({
       const at = now - phaseAt;
       if (phase === "returning") {
         fadeCoins(now);
-        const home = sleepAlong(track.width, obstacle);
+        const home = sleepAlong(track, obstacle, cachedAction);
         const stepped = reduced
           ? { along: home, facing, home: true }
           : stepHome(along, facing, home, dt, insetTrack);
@@ -568,9 +574,7 @@ export function ComposerRunner({
       return true;
     };
 
-    const mountTrack = measure(last, false);
-    if (mountTrack) along = sleepAlong(mountTrack.width, cachedObstacle);
-    fallAsleep(mountTrack);
+    fallAsleep(measure(last, false));
 
     // While asleep there is no frame loop, so layout changes that move the
     // ledge (typing a new line, a split pane resizing) re-place the mascot.

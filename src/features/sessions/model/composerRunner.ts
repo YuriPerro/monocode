@@ -39,6 +39,8 @@ export const ALERT_GAP = 3;
 /** Where the sleep Zs start, from the sprite's top-left: just above its head. */
 export const ZZZ_X = 9;
 export const ZZZ_Y = -1;
+/** Sideways drift of each Z as it rises; matches `composer-zzz-rise` in index.css. */
+export const ZZZ_RISE_X = 9;
 
 /** First chevron hit this turn: knock-back, stars, then the mascot learns the hop. */
 export const CRASH_RECOIL_PX = 18;
@@ -132,6 +134,18 @@ export const ZZZ_GLYPHS = [
   ]),
   SMALL_Z,
 ] as const;
+
+const ZZZ_REACH =
+  ZZZ_RISE_X + Math.max(...ZZZ_GLYPHS.map((glyph) => glyph.size));
+
+/**
+ * Left edge of the sleep Zs in track coordinates, for a mascot centered at
+ * `x`: above its head, shifted left so the drifting Zs stay inside the track.
+ */
+export function zzzLeft(x: number, trackWidth: number): number {
+  const start = x - RUNNER_SIZE / 2 + ZZZ_X;
+  return Math.max(0, Math.min(start, trackWidth - ZZZ_REACH));
+}
 
 type Rect = {
   left: number;
@@ -266,23 +280,36 @@ export function nextRunnerPhase(
   }
 }
 
+/** Gap left between the sleeping mascot and a chevron that would cover it. */
+const SLEEP_CLEARANCE = 2;
+
 /**
- * Where the mascot sleeps, as a distance along the inset track: the end away
- * from the chevron, or the left end when the chevron sits near the middle.
+ * Where the mascot sleeps, as a distance along the inset track: centered on
+ * the send button's column, or the right end of the track without one. When
+ * the chevron covers that spot it sleeps just left of the chevron, or just
+ * right of it when there is no room on the left.
  */
 export function sleepAlong(
-  trackWidth: number,
+  track: RunnerTrack,
   obstacle: Obstacle | null,
+  action: Rect | null,
 ): number {
-  if (!obstacle) return 0;
-  const center = (obstacle.left + obstacle.right) / 2;
-  const margin = obstacle.right - obstacle.left;
-  return center < trackWidth / 2 - margin
-    ? Math.max(0, trackWidth - RUNNER_INSET * 2)
-    : 0;
+  const insetTrack = Math.max(0, track.width - RUNNER_INSET * 2);
+  const column = action
+    ? (action.left + action.right) / 2 - track.left - RUNNER_INSET
+    : insetTrack;
+  const along = Math.min(insetTrack, Math.max(0, column));
+  if (!obstacle) return along;
+  const half = RUNNER_SIZE / 2;
+  const x = RUNNER_INSET + along;
+  if (x + half <= obstacle.left || x - half >= obstacle.right) return along;
+  const left = obstacle.left - half - SLEEP_CLEARANCE - RUNNER_INSET;
+  if (left >= 0) return left;
+  const right = obstacle.right + half + SLEEP_CLEARANCE - RUNNER_INSET;
+  return right <= insetTrack ? right : 0;
 }
 
-/** Run toward the sleep spot. It is an end of the track, so the step lands on it. */
+/** Run toward the sleep spot and stop on it instead of running past. */
 export function stepHome(
   along: number,
   facing: 1 | -1,
@@ -292,12 +319,9 @@ export function stepHome(
 ): { along: number; facing: 1 | -1; home: boolean } {
   if (along === home) return { along, facing, home: true };
   const toward: 1 | -1 = home < along ? -1 : 1;
-  const stepped = stepAlong(along, toward, dtMs, trackWidth);
-  return {
-    along: stepped.along,
-    facing: toward,
-    home: stepped.along === home,
-  };
+  const stepped = stepAlong(along, toward, dtMs, trackWidth).along;
+  const arrived = toward === 1 ? stepped >= home : stepped <= home;
+  return { along: arrived ? home : stepped, facing: toward, home: arrived };
 }
 
 export function pingPong(
