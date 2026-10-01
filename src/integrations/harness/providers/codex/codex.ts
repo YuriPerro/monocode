@@ -560,6 +560,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
               controlsAgents: input.controlsAgents,
               model,
               serviceTier,
+              developerInstructions: input.instructions,
             }),
           },
         );
@@ -580,6 +581,7 @@ async function ensureLive(input: HarnessSessionInput): Promise<Live> {
           controlsAgents: input.controlsAgents,
           model,
           serviceTier,
+          developerInstructions: input.instructions,
         }),
       );
       threadId = opened.thread?.id?.trim();

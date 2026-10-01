@@ -32,6 +32,7 @@ import type {
   RuntimeMode,
   SecondOpinionMeta,
   Session,
+  SessionProfile,
   TaskListMeta,
   PlanBlockMeta,
   TurnModel,
@@ -39,6 +40,10 @@ import type {
 } from "../model/session";
 
 import { HARNESSES, RUNTIME_MODES } from "../model/session";
+import {
+  cleanProfileInstructions,
+  cleanSessionProfile,
+} from "../../profiles/model/sessionProfile";
 
 import { restoreOrchestrationProposal } from "../../orchestration/model/orchestrationPlan";
 
@@ -67,6 +72,7 @@ export type SessionSummary = {
   draft?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
+  profile?: SessionProfile;
 };
 
 type SessionRecord = {
@@ -88,6 +94,8 @@ type SessionRecord = {
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem | null;
   automationId?: string | null;
+  profile?: SessionProfile | null;
+  profileInstructions?: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -110,6 +118,8 @@ type SessionUpsertPayload = {
   worktreeRemoved?: boolean;
   linkedWorkItem?: LinkedWorkItem;
   automationId?: string;
+  profile?: SessionProfile;
+  profileInstructions?: string;
 };
 
 /** Only real chats belong in project history — blank tabs stay ephemeral. */
@@ -131,6 +141,10 @@ function persistableMeta(
   session: Session,
 ): Omit<SessionUpsertPayload, "blocks"> {
   const linkedWorkItem = sanitizeLinkedWorkItem(session.linkedWorkItem);
+  const profile = cleanSessionProfile(session.profile);
+  const profileInstructions = profile
+    ? cleanProfileInstructions(session.profileInstructions)
+    : undefined;
   return {
     id: session.id,
     cwd: normalizeProjectPath(session.cwd),
@@ -156,6 +170,8 @@ function persistableMeta(
     ...(session.automationId && isPersistableId(session.automationId)
       ? { automationId: session.automationId }
       : {}),
+    ...(profile ? { profile } : {}),
+    ...(profileInstructions ? { profileInstructions } : {}),
   };
 }
 
@@ -1084,6 +1100,7 @@ function sanitizeTaskList(value: unknown): TaskListMeta | null {
 
 function normalizeSummary(summary: SessionSummary): SessionSummary {
   const linkedWorkItem = sanitizeLinkedWorkItem(summary.linkedWorkItem);
+  const profile = cleanSessionProfile(summary.profile);
   return {
     ...summary,
     harness: asHarness(summary.harness),
@@ -1103,6 +1120,7 @@ function normalizeSummary(summary: SessionSummary): SessionSummary {
     isPersistableId(summary.automationId)
       ? { automationId: summary.automationId }
       : {}),
+    profile,
   };
 }
 
@@ -1113,6 +1131,10 @@ function recordToSession(record: SessionRecord): Session {
         .filter((block): block is Block => block != null)
     : [];
   const linkedWorkItem = sanitizeLinkedWorkItem(record.linkedWorkItem);
+  const profile = cleanSessionProfile(record.profile);
+  const profileInstructions = profile
+    ? cleanProfileInstructions(record.profileInstructions)
+    : undefined;
   return {
     id: record.id,
     cwd: record.cwd,
@@ -1145,6 +1167,8 @@ function recordToSession(record: SessionRecord): Session {
     ...(record.automationId && isPersistableId(record.automationId)
       ? { automationId: record.automationId }
       : {}),
+    ...(profile ? { profile } : {}),
+    ...(profileInstructions ? { profileInstructions } : {}),
     ...(contextFromRecord(record) ?? {}),
   };
 }

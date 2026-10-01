@@ -52,6 +52,8 @@ export type HarnessAdapter = {
   live: boolean;
   /** False when the harness cannot accept a follow-up while a turn is running. Default: same as live. */
   canSteer?: boolean;
+  /** True when `instructions` reach the provider's system prompt. */
+  systemInstructions?: boolean;
   commands?: NativeCommandProvider;
   sendTurn(input: SendTurnInput): Promise<void>;
   /** Trigger provider-owned compaction outside MonoCode's normal user-turn path. */
@@ -265,6 +267,10 @@ export function canSteerHarness(id: HarnessId): boolean {
   const adapter = adapters.get(id);
   if (!adapter?.live) return false;
   return adapter.canSteer !== false;
+}
+
+export function harnessTakesSystemInstructions(id: HarnessId): boolean {
+  return adapters.get(id)?.systemInstructions === true;
 }
 
 export function canRewindHarnessLastTurn(id: HarnessId): boolean {

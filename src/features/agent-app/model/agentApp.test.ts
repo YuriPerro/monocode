@@ -12,6 +12,10 @@ import {
 import type { Note } from "../../notes";
 import type { Worktree } from "../../source-control/model/worktrees";
 import { handleAgentApp, notePreview, type AgentAppHost } from "./agentApp";
+import {
+  newAgentProfile,
+  saveAgentProfile,
+} from "../../profiles/model/profiles";
 
 vi.mock("../../../integrations/harness/core/availability", () => ({
   isHarnessAvailable: (id: string) => id === "codex",
@@ -273,6 +277,70 @@ describe("agent app commands", () => {
       "app-lead-request-1",
     );
     expect(result).toMatchObject({ id: "app-lead-request-1", submitted: true });
+  });
+
+  it("lists profiles and starts a session as one, letting explicit fields win", async () => {
+    const { source, host } = fixture();
+    const reviewer = saveAgentProfile({
+      ...newAgentProfile({
+        harness: "codex",
+        model: "codex:test",
+        modelSettings: { effort: "high" },
+        runtimeMode: "auto",
+      }),
+      name: "Reviewer",
+      description: "Second opinion on a diff.",
+      instructions: "Look for risks; do not edit files.",
+    });
+    expect(
+      await handleAgentApp(source, "profiles", "profiles.list", {}, host),
+    ).toEqual({
+      profiles: [
+        expect.objectContaining({
+          id: reviewer.id,
+          name: "Reviewer",
+          description: "Second opinion on a diff.",
+          harness: "codex",
+          runtimeMode: "auto",
+          available: true,
+          hasInstructions: true,
+        }),
+      ],
+    });
+
+    const result = await handleAgentApp(
+      source,
+      "as-profile",
+      "sessions.start",
+      { prompt: "Review the diff", profile: "reviewer", effort: "medium" },
+      host,
+    );
+    expect(host.start).toHaveBeenCalledWith(
+      expect.objectContaining({
+        harness: "codex",
+        model: "codex:test",
+        modelSettings: { effort: "medium" },
+        runtimeMode: "auto",
+        profile: {
+          id: reviewer.id,
+          name: "Reviewer",
+          icon: "",
+          color: "",
+        },
+        profileInstructions: "Look for risks; do not edit files.",
+      }),
+      "app-lead-as-profile",
+    );
+    expect(result).toMatchObject({ profile: "Reviewer" });
+    await expect(
+      handleAgentApp(
+        source,
+        "missing-profile",
+        "sessions.start",
+        { prompt: "Review", profile: "Designer" },
+        host,
+      ),
+    ).rejects.toThrow("Unknown profile");
   });
 
   it("lists project worktrees and starts on a selected existing checkout", async () => {

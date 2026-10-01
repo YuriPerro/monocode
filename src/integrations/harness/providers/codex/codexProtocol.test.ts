@@ -120,6 +120,19 @@ describe("buildThreadStartParams / buildTurnStartParams", () => {
     expect(thread.serviceTier).toBeUndefined();
   });
 
+  it("carries profile instructions as thread developer instructions", () => {
+    expect(
+      buildThreadStartParams({
+        cwd: "/tmp/proj",
+        runtimeMode: "auto",
+        developerInstructions: "You are the Architect.",
+      }),
+    ).toMatchObject({ developerInstructions: "You are the Architect." });
+    expect(
+      buildThreadStartParams({ cwd: "/tmp/proj", runtimeMode: "auto" }),
+    ).not.toHaveProperty("developerInstructions");
+  });
+
   it("builds turn input with text and image attachments", () => {
     const turn = buildTurnStartParams({
       threadId: "thr_1",

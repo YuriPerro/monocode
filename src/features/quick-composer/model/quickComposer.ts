@@ -29,6 +29,7 @@ import {
   type Attachment,
   harnessSupportsAttachments,
   type HarnessId,
+  type SessionProfile,
 } from "../../sessions/model/session";
 
 /** Workspace windows hear this when the panel has a session for them. */
@@ -69,6 +70,9 @@ export type QuickLaunch = {
   worktreeCwd?: string;
   /** Bring the new session forward instead of starting it quietly. */
   reveal: boolean;
+  /** Agent profile the new session starts as. */
+  profile?: SessionProfile;
+  profileInstructions?: string;
 };
 
 /** The panel exists on macOS only; elsewhere the shortcut is never claimed. */

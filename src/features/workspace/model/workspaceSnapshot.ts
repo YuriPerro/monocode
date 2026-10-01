@@ -38,7 +38,12 @@ import {
   type HarnessId,
   type RuntimeMode,
   type Session,
+  type SessionProfile,
 } from "../../sessions/model/session";
+import {
+  cleanProfileInstructions,
+  cleanSessionProfile,
+} from "../../profiles/model/sessionProfile";
 
 export type WorkspaceSessionStub = {
   inboxAsk?: InboxAskContext;
@@ -54,6 +59,8 @@ export type WorkspaceSessionStub = {
   branch?: string;
   worktreeCwd?: string;
   worktreeRemoved?: boolean;
+  profile?: SessionProfile;
+  profileInstructions?: string;
 };
 
 export type WorkspaceSnapshot = {
@@ -356,6 +363,10 @@ function sessionStub(session: Session): WorkspaceSessionStub | null {
     ...(session.branch ? { branch: session.branch } : {}),
     ...(session.worktreeCwd ? { worktreeCwd: session.worktreeCwd } : {}),
     ...(session.worktreeRemoved ? { worktreeRemoved: true } : {}),
+    ...(session.profile ? { profile: session.profile } : {}),
+    ...(session.profileInstructions
+      ? { profileInstructions: session.profileInstructions }
+      : {}),
   };
 }
 
@@ -385,6 +396,10 @@ function sessionFromStub(stub: WorkspaceSessionStub): Session {
     ...(stub.branch ? { branch: stub.branch } : {}),
     ...(stub.worktreeCwd ? { worktreeCwd: stub.worktreeCwd } : {}),
     ...(stub.worktreeRemoved ? { worktreeRemoved: true } : {}),
+    ...(stub.profile ? { profile: stub.profile } : {}),
+    ...(stub.profileInstructions
+      ? { profileInstructions: stub.profileInstructions }
+      : {}),
   };
 }
 
@@ -433,7 +448,19 @@ function sanitizeStub(raw: unknown): WorkspaceSessionStub | null {
       ? { worktreeCwd: value.worktreeCwd.trim() }
       : {}),
     ...(value.worktreeRemoved === true ? { worktreeRemoved: true } : {}),
+    ...profileFields(value),
   };
+}
+
+function profileFields(
+  value: Record<string, unknown>,
+): Pick<WorkspaceSessionStub, "profile" | "profileInstructions"> {
+  const profile = cleanSessionProfile(value.profile);
+  if (!profile) return {};
+  const profileInstructions = cleanProfileInstructions(
+    value.profileInstructions,
+  );
+  return { profile, ...(profileInstructions ? { profileInstructions } : {}) };
 }
 
 function sanitizeTab(raw: unknown): WorkspaceTab | null {

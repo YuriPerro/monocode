@@ -82,8 +82,9 @@ const ACTIONS: [&str; 12] = [
     "list", "delegate", "get", "steer", "message", "retry", "cancel", "wait", "review", "finish",
     "respond", "answer",
 ];
-const APP_ACTIONS: [&str; 13] = [
+const APP_ACTIONS: [&str; 14] = [
     "models.list",
+    "profiles.list",
     "sessions.list",
     "sessions.read",
     "sessions.send",
@@ -103,6 +104,8 @@ Usage: {exe} app ACTION [--json JSON | --input FILE|-] [--request-id ID]
 
 Actions:
   models.list    {}  Available providers, models, settings and permission modes.
+  profiles.list  {}  Agent profiles: name, when to use it, provider, model and
+                  permission mode. Pass a name or ID to sessions.start.
   sessions.list  {}  Project sessions with IDs, busy status and hasDraft.
   sessions.read  {"sessionId":"...","before":"<turnId>","limit":3,"maxChars":1200}
                   Read up to 3 recent user/assistant exchanges. Tools and
@@ -116,7 +119,8 @@ Actions:
                   Save an unsent draft in an idle project session. Existing
                   drafts are preserved; send or remove one in MonoCode first.
                   Reuse --request-id on retries.
-  sessions.start {"prompt":"...","harness":"codex","model":"codex:...",
+  sessions.start {"prompt":"...","profile":"Reviewer",
+                  "harness":"codex","model":"codex:...",
                   "effort":"high","reveal":false,
                   "workspaceMode":"current","worktreeCwd":"<path>","draft":false,
                   "placement":"right",
@@ -126,7 +130,9 @@ Actions:
                   calling session; besideSessionId chooses another visible
                   session in this project, including one just created. Set
                   draft:true to save the prompt unsent; no agent turn runs.
-                  Otherwise the turn is submitted.
+                  Otherwise the turn is submitted. A profile supplies
+                  provider, model, settings, permission mode and its
+                  instructions as the system prompt; explicit fields win.
                   Returns after creation/acceptance, not agent completion;
                   use its ID with folders.move immediately. Optional model,
                   effort, modelSettings, permission mode and workspace choice

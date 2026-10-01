@@ -250,6 +250,7 @@ export function buildClaudeSpawnArgs(input: {
   includePartialMessages?: boolean;
   maxTurns?: number;
   isolated?: boolean;
+  appendSystemPrompt?: string;
 }): string[] {
   const args = [
     "--output-format",
@@ -279,6 +280,9 @@ export function buildClaudeSpawnArgs(input: {
   } else {
     args.push(`--setting-sources=${CLAUDE_SETTING_SOURCES}`);
     args.push("--settings", JSON.stringify(settings));
+    if (input.appendSystemPrompt) {
+      args.push("--append-system-prompt", input.appendSystemPrompt);
+    }
   }
   if (input.model) args.push("--model", input.model);
   if (input.effort) args.push("--effort", input.effort);

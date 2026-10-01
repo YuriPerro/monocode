@@ -123,6 +123,10 @@ pub struct SessionUpsert {
     pub linked_work_item: Option<Value>,
     #[serde(default)]
     pub automation_id: Option<String>,
+    #[serde(default)]
+    pub profile: Option<Value>,
+    #[serde(default)]
+    pub profile_instructions: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -162,6 +166,8 @@ pub struct SessionSummary {
     pub linked_work_item: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -195,6 +201,10 @@ pub struct SessionRecord {
     pub linked_work_item: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automation_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_instructions: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -222,6 +232,13 @@ pub fn session_upsert(
         if !automation_id.is_empty() {
             validate_id(automation_id, "automation")?;
         }
+    }
+    if session
+        .profile
+        .as_ref()
+        .is_some_and(|profile| !profile.is_object())
+    {
+        return Err("profile must be an object".into());
     }
     if !session.model_settings.is_object() {
         return Err("modelSettings must be an object".into());
@@ -762,6 +779,8 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         ("worktree_removed", "INTEGER NOT NULL DEFAULT 0"),
         ("is_draft", "INTEGER NOT NULL DEFAULT 0"),
         ("automation_id", "TEXT"),
+        ("profile_json", "TEXT"),
+        ("profile_instructions", "TEXT"),
     ] {
         ensure_session_column(conn, column, decl)?;
     }
@@ -909,6 +928,26 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             params![now_millis()],
         )?;
     }
+    if current < 19 {
+        // Sidebar cards show the agent profile a session started as. The
+        // profile's instructions are only read when a session is reopened, so
+        // they stay out of the covering index.
+        ensure_session_column(conn, "profile_json", "TEXT")?;
+        ensure_session_column(conn, "profile_instructions", "TEXT")?;
+        conn.execute_batch(
+            "DROP INDEX IF EXISTS sessions_cwd_cover_idx;
+             CREATE INDEX sessions_cwd_cover_idx
+               ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
+                            model, runtime_mode, title, provider_session_id,
+                            created_at, branch, archived, pinned,
+                            linked_work_item_json, worktree_cwd, worktree_removed,
+                            is_draft, automation_id, profile_json);",
+        )?;
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (19, ?1)",
+            params![now_millis()],
+        )?;
+    }
     // Create even when a version row already exists (another build may have
     // used the same numbers, or a previous run recorded the version without
     // the table). Restore writes into these; missing tables look like a
@@ -948,7 +987,7 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
                         model, runtime_mode, title, provider_session_id,
                         created_at, branch, archived, pinned,
                         linked_work_item_json, worktree_cwd, worktree_removed,
-                        is_draft, automation_id);",
+                        is_draft, automation_id, profile_json);",
     )?;
     crate::notes::ensure_notes_table(conn)?;
     crate::reminders::ensure_table(conn)?;
@@ -1092,6 +1131,17 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty());
+    let profile_json = session
+        .profile
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let profile_instructions = session
+        .profile_instructions
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
     let provider_session_id = session
         .provider_session_id
         .as_ref()
@@ -1164,8 +1214,8 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
            provider_session_id, blocks_json, created_at, updated_at, branch,
            context_used, context_window, worktree_cwd, has_user_message,
            linked_work_item_json, provider_account_id, worktree_removed, is_draft,
-           automation_id
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+           automation_id, profile_json, profile_instructions
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)
          ON CONFLICT(id) DO UPDATE SET
            cwd = excluded.cwd,
            harness = excluded.harness,
@@ -1185,7 +1235,9 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
            provider_account_id = excluded.provider_account_id,
            worktree_removed = excluded.worktree_removed,
            is_draft = excluded.is_draft,
-           automation_id = excluded.automation_id",
+           automation_id = excluded.automation_id,
+           profile_json = excluded.profile_json,
+           profile_instructions = excluded.profile_instructions",
         params![
             session.id,
             session.cwd,
@@ -1208,6 +1260,8 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
             i64::from(session.worktree_removed),
             i64::from(is_draft),
             automation_id,
+            profile_json,
+            profile_instructions,
         ],
     )?;
 
@@ -1235,6 +1289,7 @@ fn upsert_session(conn: &Connection, session: &SessionUpsert) -> rusqlite::Resul
         draft: is_draft,
         linked_work_item: session.linked_work_item.clone(),
         automation_id: automation_id.map(str::to_owned),
+        profile: session.profile.clone(),
     })
 }
 
@@ -1568,7 +1623,7 @@ fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<Session
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
+                worktree_removed, is_draft, automation_id, profile_json
          FROM sessions
          WHERE cwd = ?1
            AND has_user_message = 1
@@ -1608,6 +1663,7 @@ fn list_by_project(conn: &Connection, cwd: &str) -> rusqlite::Result<Vec<Session
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item,
             automation_id: nonempty(row.get(17)?),
+            profile: optional_json(row.get(18)?),
         })
     })?;
     rows.collect()
@@ -1619,7 +1675,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
                 created_at, updated_at, branch, archived, pinned,
                 linked_work_item_json,
                 (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id), worktree_cwd,
-                worktree_removed, is_draft, automation_id
+                worktree_removed, is_draft, automation_id, profile_json
          FROM sessions
          WHERE has_user_message = 1
            AND linked_work_item_json IS NOT NULL
@@ -1653,6 +1709,7 @@ fn list_linked(conn: &Connection) -> rusqlite::Result<Vec<SessionSummary>> {
             draft: row.get::<_, i64>(16)? != 0,
             linked_work_item: optional_json(row.get(12)?),
             automation_id: nonempty(row.get(17)?),
+            profile: optional_json(row.get(18)?),
         })
     })?;
     rows.collect()
@@ -1841,7 +1898,7 @@ fn get_session(conn: &Connection, session_id: &str) -> rusqlite::Result<Option<S
                 provider_session_id, blocks_json, created_at, updated_at,
                 context_used, context_window, branch, worktree_cwd,
                 linked_work_item_json, provider_account_id, worktree_removed,
-                automation_id
+                automation_id, profile_json, profile_instructions
          FROM sessions
          WHERE id = ?1 AND inbox_ask IS NULL",
         params![session_id],
@@ -1881,6 +1938,8 @@ fn get_session(conn: &Connection, session_id: &str) -> rusqlite::Result<Option<S
                 linked_work_item: optional_json(row.get(15)?),
                 provider_account_id: row.get(16)?,
                 automation_id: nonempty(row.get(18)?),
+                profile: optional_json(row.get(19)?),
+                profile_instructions: nonempty(row.get(20)?),
                 created_at: row.get(9)?,
                 updated_at: row.get(10)?,
             })
@@ -2061,6 +2120,8 @@ mod tests {
             worktree_removed: false,
             linked_work_item: None,
             automation_id: None,
+            profile: None,
+            profile_instructions: None,
         }
     }
 
@@ -2197,7 +2258,7 @@ mod tests {
                        ON sessions (cwd, has_user_message, updated_at DESC, id, harness,
                                     model, runtime_mode, title, provider_session_id,
                                     created_at, branch, archived, pinned, linked_work_item_json);
-                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18);",
+                     DELETE FROM schema_migrations WHERE version IN (16, 17, 18, 19);",
                 )
                 .unwrap();
                 migrate(&conn).unwrap();
@@ -2208,7 +2269,7 @@ mod tests {
                  SELECT id, cwd, harness, model, runtime_mode, title, provider_session_id,
                         created_at, updated_at, branch, archived, pinned,
                         linked_work_item_json, worktree_cwd, worktree_removed, is_draft,
-                        automation_id,
+                        automation_id, profile_json,
                         (SELECT summary FROM orchestration_sidebar WHERE lead_id = sessions.id)
                  FROM sessions
                  WHERE cwd = ?1
@@ -2390,6 +2451,28 @@ mod tests {
         assert_eq!(listed[0].automation_id.as_deref(), Some("automation-id"));
         let stored = get_session(&conn, "s1").unwrap().unwrap();
         assert_eq!(stored.automation_id.as_deref(), Some("automation-id"));
+    }
+
+    #[test]
+    fn profile_round_trips_with_instructions_only_on_the_record() {
+        let store = SessionStore::open_in_memory().unwrap();
+        let conn = store.conn.lock().unwrap();
+        let mut row = sample("s1", "/tmp/a", "Review the plan");
+        let profile =
+            json!({"id": "profile-1", "name": "Advisor", "icon": "eye", "color": "#8b5cf6"});
+        row.profile = Some(profile.clone());
+        row.profile_instructions = Some("Look for risks.".into());
+
+        let summary = upsert_session(&conn, &row).unwrap();
+        assert_eq!(summary.profile.as_ref(), Some(&profile));
+        let listed = list_by_project(&conn, "/tmp/a").unwrap();
+        assert_eq!(listed[0].profile.as_ref(), Some(&profile));
+        let stored = get_session(&conn, "s1").unwrap().unwrap();
+        assert_eq!(stored.profile.as_ref(), Some(&profile));
+        assert_eq!(
+            stored.profile_instructions.as_deref(),
+            Some("Look for risks.")
+        );
     }
 
     #[test]

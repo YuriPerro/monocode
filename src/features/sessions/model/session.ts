@@ -453,6 +453,10 @@ export type Session = {
   linkedWorkItem?: LinkedWorkItem;
   /** Automation that created or last launched this session. */
   automationId?: string;
+  /** Agent profile this session started as. */
+  profile?: SessionProfile;
+  /** The profile's instructions when the session started; sent as its system prompt. */
+  profileInstructions?: string;
   /** New linked-item activity shown above the composer. In-memory, one-shot. */
   linkedWorkItemUpdateCard?: LinkedWorkItemUpdateCard;
   /** Note chip shown above the composer. In-memory, one-shot. */
@@ -464,6 +468,14 @@ export type Session = {
    * In-memory; request ids do not survive restarts.
    */
   pendingQuestion?: UserQuestionPrompt;
+};
+
+/** Display snapshot of the agent profile a session started as. */
+export type SessionProfile = {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
 };
 
 export type PendingHarnessSwitch = {

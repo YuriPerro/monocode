@@ -170,6 +170,8 @@ export type HarnessSessionInput = {
   controlsAgents?: boolean;
   /** Grants this normal turn access to MonoCode's scoped app CLI. */
   appAccess?: boolean;
+  /** Agent profile instructions, appended to the provider's system prompt. */
+  instructions?: string;
   onEvent: (event: HarnessEvent) => void;
 };
 

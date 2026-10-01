@@ -32,6 +32,11 @@ import { pathKey } from "../../../shared/lib/paths";
 import type { SplitDir } from "../../workspace/model/layout";
 import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
 import { sessionConversationPage } from "./sessionConversation";
+import {
+  agentProfiles,
+  findAgentProfile,
+  profileLaunch,
+} from "../../profiles/model/profiles";
 
 export type AppSessionListing = {
   id: string;
@@ -79,6 +84,7 @@ export type AgentAppHost = {
 
 const FIELDS = new Map<string, readonly string[]>([
   ["models.list", []],
+  ["profiles.list", []],
   ["sessions.list", []],
   ["sessions.read", ["sessionId", "before", "limit", "maxChars"]],
   ["sessions.send", ["sessionId", "prompt"]],
@@ -88,6 +94,7 @@ const FIELDS = new Map<string, readonly string[]>([
     [
       "prompt",
       "draft",
+      "profile",
       "harness",
       "model",
       "modelSettings",
@@ -198,20 +205,29 @@ function startLaunch(
   const prompt = agentPrompt(input.prompt);
   const draft = input.draft ?? false;
   if (typeof draft !== "boolean") throw new Error("draft must be a boolean");
-  const harness = input.harness ?? source.harness;
+  const profileQuery = optionalString(input.profile, "profile", 128);
+  const profile = profileQuery ? findAgentProfile(profileQuery) : undefined;
+  if (profileQuery && !profile)
+    throw new Error(
+      "Unknown profile; run profiles.list for configured profiles",
+    );
+  const harness = input.harness ?? profile?.harness ?? source.harness;
   if (!HARNESSES.includes(harness as HarnessId))
     throw new Error("Unknown harness; run models.list for available providers");
   const chosenHarness = harness as HarnessId;
   if (!isHarnessAvailable(chosenHarness))
     throw new Error(`${chosenHarness} is not available in MonoCode`);
   const requestedModel = optionalString(input.model, "model");
+  const profileModel =
+    profile?.harness === chosenHarness ? profile.model : undefined;
   const model = requestedModel
     ? modelsFor(chosenHarness).find((entry) => entry.id === requestedModel)
     : resolveModel(
         chosenHarness,
-        chosenHarness === source.harness
-          ? source.model
-          : preferredModelId(chosenHarness),
+        profileModel ??
+          (chosenHarness === source.harness
+            ? source.model
+            : preferredModelId(chosenHarness)),
       );
   if (!model || model.harness !== chosenHarness)
     throw new Error("Unknown model; run models.list for exact model IDs");
@@ -245,7 +261,8 @@ function startLaunch(
         `Invalid model setting ${key}; run models.list for allowed values`,
       );
   }
-  const runtimeMode = input.runtimeMode ?? source.runtimeMode;
+  const runtimeMode =
+    input.runtimeMode ?? profile?.runtimeMode ?? source.runtimeMode;
   if (!RUNTIME_MODES.includes(runtimeMode as Session["runtimeMode"]))
     throw new Error(`runtimeMode must be one of: ${RUNTIME_MODES.join(", ")}`);
   const reveal = input.reveal ?? false;
@@ -266,9 +283,13 @@ function startLaunch(
     harness: chosenHarness,
     model: model.id,
     modelSettings: mergeModelSettings(model, {
-      ...(chosenHarness === source.harness && model.id === source.model
-        ? source.modelSettings
-        : {}),
+      ...(profile &&
+      profile.harness === chosenHarness &&
+      profile.model === model.id
+        ? profile.modelSettings
+        : chosenHarness === source.harness && model.id === source.model
+          ? source.modelSettings
+          : {}),
       ...(requestedSettings as Record<string, string>),
     }),
     runtimeMode: runtimeMode as Session["runtimeMode"],
@@ -278,6 +299,7 @@ function startLaunch(
       ? { worktreeCwd: worktreeCwd || source.worktreeCwd }
       : {}),
     ...(worktreeBase ? { worktreeBase } : {}),
+    ...(profile ? profileLaunch(profile) : {}),
   };
 }
 
@@ -305,6 +327,20 @@ export async function handleAgentApp(
             name: model.name,
             settings: model.settings ?? [],
           })),
+        })),
+      };
+    case "profiles.list":
+      return {
+        profiles: agentProfiles().map((profile) => ({
+          id: profile.id,
+          name: profile.name,
+          description: profile.description,
+          harness: profile.harness,
+          model: profile.model,
+          modelSettings: profile.modelSettings,
+          runtimeMode: profile.runtimeMode,
+          available: isHarnessAvailable(profile.harness),
+          hasInstructions: !!profile.instructions.trim(),
         })),
       };
     case "sessions.list":
@@ -396,6 +432,7 @@ export async function handleAgentApp(
         cwd: launch.cwd,
         harness: launch.harness,
         model: launch.model,
+        ...(launch.profile ? { profile: launch.profile.name } : {}),
         submitted: !launch.draft,
         draft: !!launch.draft,
       };

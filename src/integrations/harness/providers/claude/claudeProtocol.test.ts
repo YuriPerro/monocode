@@ -139,6 +139,23 @@ describe("buildClaudeSpawnArgs", () => {
     expect(JSON.parse(settings)).toMatchObject({ disableAllHooks: true });
   });
 
+  it("appends profile instructions to interactive sessions only", () => {
+    const interactive = buildClaudeSpawnArgs({
+      appendSystemPrompt: "You are the Designer.",
+    });
+    expect(interactive).toEqual(
+      expect.arrayContaining([
+        "--append-system-prompt",
+        "You are the Designer.",
+      ]),
+    );
+    const isolated = buildClaudeSpawnArgs({
+      isolated: true,
+      appendSystemPrompt: "You are the Designer.",
+    });
+    expect(isolated).not.toContain("--append-system-prompt");
+  });
+
   it("skips permissions and MCP for isolated text sessions", () => {
     const args = buildClaudeSpawnArgs({
       isolated: true,
