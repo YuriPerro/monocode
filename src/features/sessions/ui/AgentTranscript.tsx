@@ -859,7 +859,7 @@ function AgentTranscriptComponent({
             <div
               key={turn[0].id}
               data-transcript-turn={turnId}
-              className={`transcript-turn flex min-w-0 flex-col${
+              className={`transcript-turn group/turn flex min-w-0 flex-col${
                 isLastTurn ? " transcript-turn-live" : ""
               }${
                 promptAnchor && anchorTurn && isLastTurn && userBlock
@@ -1106,7 +1106,7 @@ function TurnDuration({
   return (
     <div
       aria-label={label}
-      className="flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-4 pt-1 pb-3 font-sans text-sm text-content/40"
+      className="flex w-full min-w-0 max-w-full items-center gap-2.5 overflow-hidden px-4 pt-1 pb-3 font-sans text-sm text-content/40 opacity-0 transition-opacity duration-[var(--motion-feedback-duration)] group-hover/turn:opacity-100 focus-within:opacity-100 has-aria-expanded:opacity-100"
     >
       <span className="flex shrink-0 items-center gap-1">
         {output ? (
@@ -1984,7 +1984,7 @@ function WorkFoldLine({
       {title}
     </span>
   );
-  const chip = profile ? <ProfileChip profile={profile} size="xs" /> : null;
+  const chip = profile ? <ProfileChip profile={profile} /> : null;
   const row = `flex w-full min-w-0 items-center gap-1.5 px-4 py-1 text-left${
     open ? " zen-fold-drop" : ""
   }`;

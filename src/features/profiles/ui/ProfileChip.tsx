@@ -15,7 +15,7 @@ export function ProfileChip({
     <span
       title={`Started as ${profile.name}`}
       style={profileColorStyle(profile)}
-      className={`profile-chip inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md font-medium ${
+      className={`profile-chip inline-flex min-w-0 shrink-0 items-center gap-1 rounded-md font-sans font-medium ${
         size === "sm" ? "h-5 px-1.5 text-[11px]" : "h-4 px-1 text-[10px]"
       } ${className}`}
     >
