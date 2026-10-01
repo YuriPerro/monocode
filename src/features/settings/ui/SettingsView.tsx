@@ -234,8 +234,10 @@ import { ProviderAccountSubtitle } from "../../providers/ui/ProviderAccountSubti
 import {
   accountStatus,
   accountUsageKey,
+  needsProviderLogin,
   useProviderAccountUsage,
 } from "../../providers/model/accountUsage";
+import type { ProviderRateLimits } from "../../providers/model/rateLimits";
 import { clearCachedRateLimits } from "../../providers/model/rateLimitsCache";
 import {
   AccountStatusLabel,
@@ -3497,7 +3499,7 @@ function ProviderAccountsSettings() {
                       </div>
                     </div>
                     <AccountUsageMeters limits={limits} now={usage.now} />
-                    {limits?.signInRequired ||
+                    {(limits && canSignIn(limits)) ||
                     working === `login:${provider}:${account.id}` ? (
                       <button
                         type="button"
@@ -3554,6 +3556,14 @@ function ProviderAccountsSettings() {
         </p>
       ) : null}
     </Group>
+  );
+}
+
+/** A missing CLI is not something a sign-in can fix. */
+function canSignIn(limits: ProviderRateLimits): boolean {
+  return (
+    needsProviderLogin(limits) &&
+    !limits.error?.toLowerCase().includes("cli not found")
   );
 }
 

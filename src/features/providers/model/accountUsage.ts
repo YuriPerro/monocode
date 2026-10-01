@@ -57,6 +57,20 @@ export function accountHeadroom(
 }
 
 /** Ready / Running low / Exhausted for an account, shared by every surface. */
+/** The account needs its provider sign-in to report usage again. */
+export function needsProviderLogin(limits: ProviderRateLimits): boolean {
+  if (limits.status === "unavailable") return true;
+  if (limits.status !== "error") return false;
+  const text = limits.error?.toLowerCase() ?? "";
+  return (
+    text.includes("expired") ||
+    text.includes("sign-in") ||
+    text.includes("not signed in") ||
+    text.includes("not connected") ||
+    text.includes("authentication")
+  );
+}
+
 export function accountStatus(
   limits: ProviderRateLimits | undefined,
   now: number,

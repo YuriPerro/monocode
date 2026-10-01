@@ -51,53 +51,7 @@ vi.mock("../../../integrations/harness/core/jsonRpc", () => ({
   },
 }));
 
-import { invoke } from "@tauri-apps/api/core";
-import { errorRateLimits, signInRequired } from "./rateLimits";
-import { fetchClaudeRateLimits, fetchCodexRateLimits } from "./rateLimitsFetch";
-
-describe("fetchClaudeRateLimits sign-in state", () => {
-  it("asks for sign-in when the account has no or an expired sign-in", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
-      status: "unavailable",
-      error: "Claude not signed in",
-    });
-    expect(await fetchClaudeRateLimits("work")).toMatchObject({
-      status: "unavailable",
-      signInRequired: true,
-    });
-    vi.mocked(invoke).mockResolvedValueOnce({
-      status: "error",
-      httpStatus: 401,
-      error: "Claude sign-in expired",
-    });
-    expect(await fetchClaudeRateLimits("work")).toMatchObject({
-      status: "error",
-      error: "Claude sign-in expired",
-      signInRequired: true,
-    });
-  });
-
-  it("does not ask for sign-in on other usage failures", async () => {
-    vi.mocked(invoke).mockResolvedValueOnce({
-      status: "error",
-      httpStatus: 429,
-      error: "Claude usage request failed (429)",
-    });
-    expect(
-      (await fetchClaudeRateLimits("work")).signInRequired,
-    ).toBeUndefined();
-  });
-
-  it("drops a stale sign-in flag when a later failure keeps old windows", () => {
-    const previous = signInRequired({
-      ...errorRateLimits("claude", "Claude sign-in expired"),
-      session: { usedPercent: 10, windowMinutes: 300, resetsAt: null },
-    });
-    expect(
-      errorRateLimits("claude", "Timed out", previous).signInRequired,
-    ).toBeUndefined();
-  });
-});
+import { fetchCodexRateLimits } from "./rateLimitsFetch";
 
 describe("fetchCodexRateLimits", () => {
   beforeEach(() => {

@@ -1,3 +1,4 @@
+import { needsProviderLogin } from "../../features/providers/model/accountUsage";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import {
   clampUsedPercent,
@@ -1093,19 +1094,6 @@ function EmptyUsageState({
         </p>
       ) : null}
     </div>
-  );
-}
-
-export function needsProviderLogin(limits: ProviderRateLimits): boolean {
-  if (limits.status === "unavailable") return true;
-  if (limits.status !== "error") return false;
-  const text = limits.error?.toLowerCase() ?? "";
-  return (
-    text.includes("expired") ||
-    text.includes("sign-in") ||
-    text.includes("not signed in") ||
-    text.includes("not connected") ||
-    text.includes("authentication")
   );
 }
 

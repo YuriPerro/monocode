@@ -40,8 +40,6 @@ export type ProviderRateLimits = {
   updatedAt: number;
   error: string | null;
   status: RateLimitStatus;
-  /** The account's stored sign-in is missing or expired; signing in again fixes it. */
-  signInRequired?: boolean;
 };
 
 export const SESSION_WINDOW_MINUTES = 300;
@@ -120,9 +118,8 @@ export function errorRateLimits(
       previous.monthly ||
       previous.resetCredits)
   ) {
-    const { signInRequired: _stale, ...kept } = previous;
     return {
-      ...kept,
+      ...previous,
       error,
       status: "error",
       updatedAt: Date.now(),
@@ -138,10 +135,6 @@ export function errorRateLimits(
     error,
     status: "error",
   };
-}
-
-export function signInRequired(limits: ProviderRateLimits): ProviderRateLimits {
-  return { ...limits, signInRequired: true };
 }
 
 export function clampUsedPercent(value: number): number {

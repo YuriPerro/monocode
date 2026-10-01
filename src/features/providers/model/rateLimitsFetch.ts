@@ -5,7 +5,6 @@ import {
   parseClaudeOAuthUsage,
   parseCodexRateLimits,
   parseOpencodeGoUsage,
-  signInRequired,
   unavailableRateLimits,
   type ProviderRateLimits,
 } from "./rateLimits";
@@ -98,18 +97,15 @@ export async function fetchClaudeRateLimits(
       };
     }
     if (result.status === "unavailable") {
-      return signInRequired(
-        unavailableRateLimits(
-          "claude",
-          result.error?.trim() || "Claude not signed in",
-        ),
+      return unavailableRateLimits(
+        "claude",
+        result.error?.trim() || "Claude not signed in",
       );
     }
-    const failed = errorRateLimits(
+    return errorRateLimits(
       "claude",
       result.error?.trim() || "Claude usage unavailable",
     );
-    return result.httpStatus === 401 ? signInRequired(failed) : failed;
   } catch (error) {
     return errorRateLimits(
       "claude",
@@ -153,9 +149,7 @@ export async function fetchCodexRateLimits(
         message,
       )
     ) {
-      return signInRequired(
-        unavailableRateLimits("codex", "Codex not signed in"),
-      );
+      return unavailableRateLimits("codex", "Codex not signed in");
     }
     if (/ENOENT|not found|could not run/i.test(message)) {
       return unavailableRateLimits("codex", "Codex CLI not found");
