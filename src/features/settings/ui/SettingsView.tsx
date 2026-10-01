@@ -212,6 +212,8 @@ import {
   newProviderAccount,
   providerAccounts,
   PROVIDER_ACCOUNT_PROVIDERS,
+  preferProviderAccount,
+  preferredProviderAccountId,
   removeProviderAccount,
   renameProviderAccount,
   saveProviderAccount,
@@ -3478,12 +3480,26 @@ function ProviderAccountsSettings() {
                       ) : null}
                       {limits?.signInRequired ? "Sign in" : "Sign in again"}
                     </button>
-                    <div className="flex w-24 shrink-0 items-center justify-end gap-1">
-                      {account.isDefault ? (
-                        <span className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30">
+                    <div className="flex min-w-24 shrink-0 items-center justify-end gap-1">
+                      {account.id === preferredProviderAccountId(provider) ? (
+                        <span
+                          title="Projects that have not picked an account use this one"
+                          className="mr-1 text-[10px] font-medium uppercase tracking-wide text-content/30"
+                        >
                           Default
                         </span>
-                      ) : null}
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={Boolean(working)}
+                          aria-label={`Use ${account.label} by default`}
+                          title="Use this account in projects that have not picked one"
+                          onClick={() => preferProviderAccount(provider, account.id)}
+                          className="mr-1 shrink-0 rounded px-1 text-[10px] font-medium uppercase tracking-wide text-content/40 opacity-0 transition-opacity duration-150 hover:bg-content/10 hover:text-content focus-visible:opacity-100 group-hover/account:opacity-100 disabled:opacity-35"
+                        >
+                          Set default
+                        </button>
+                      )}
                       <button
                         type="button"
                         disabled={Boolean(working)}

@@ -3,6 +3,7 @@ import type { HarnessId } from "../../sessions/model/session";
 
 const ACCOUNTS_KEY = "monocode.providerAccounts.v1";
 const SELECTIONS_KEY = "monocode.providerAccountSelections.v1";
+const PREFERRED_KEY = "monocode.providerAccountPreferred.v1";
 const CHANGE_EVENT = "monocode-provider-accounts-changed";
 
 export const DEFAULT_PROVIDER_ACCOUNT_ID = "default";
@@ -198,7 +199,33 @@ export function selectedProviderAccountId(
   const id = selections[selectionKey(project)]?.[provider];
   return providerAccounts(provider).some((account) => account.id === id)
     ? id!
+    : preferredProviderAccountId(provider);
+}
+
+/** The account projects use until they pick one; the CLI's own profile unless changed. */
+export function preferredProviderAccountId(
+  provider: ProviderAccountProvider,
+): string {
+  const id =
+    readRecord<Partial<Record<ProviderAccountProvider, string>>>(PREFERRED_KEY)[
+      provider
+    ];
+  return providerAccountExists(provider, id)
+    ? id!
     : DEFAULT_PROVIDER_ACCOUNT_ID;
+}
+
+export function preferProviderAccount(
+  provider: ProviderAccountProvider,
+  accountId: string,
+): void {
+  if (!providerAccountExists(provider, accountId)) return;
+  const preferred =
+    readRecord<Partial<Record<ProviderAccountProvider, string>>>(PREFERRED_KEY);
+  if (accountId === DEFAULT_PROVIDER_ACCOUNT_ID) delete preferred[provider];
+  else preferred[provider] = accountId;
+  writeJson(PREFERRED_KEY, preferred);
+  announceChange();
 }
 
 export function selectProviderAccount(
@@ -229,7 +256,12 @@ export function providerAccountLabel(
 export function subscribeProviderAccounts(listener: () => void): () => void {
   const local = () => listener();
   const storage = (event: StorageEvent) => {
-    if (event.key === ACCOUNTS_KEY || event.key === SELECTIONS_KEY) listener();
+    if (
+      event.key === ACCOUNTS_KEY ||
+      event.key === SELECTIONS_KEY ||
+      event.key === PREFERRED_KEY
+    )
+      listener();
   };
   window.addEventListener(CHANGE_EVENT, local);
   window.addEventListener("storage", storage);

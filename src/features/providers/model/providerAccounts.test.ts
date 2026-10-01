@@ -9,6 +9,8 @@ import {
   removeProviderAccount,
   renameProviderAccount,
   saveProviderAccount,
+  preferProviderAccount,
+  preferredProviderAccountId,
   selectedProviderAccountId,
   selectProviderAccount,
 } from "./providerAccounts";
@@ -199,5 +201,34 @@ describe("provider accounts", () => {
     removeProviderAccount("claude", "account-work");
 
     expect(providerAccounts("claude")[0]?.label).toBe("Primary");
+  });
+
+  it("falls back to the preferred account for projects without a pick", () => {
+    const personal = newProviderAccount("claude", "Personal");
+    saveProviderAccount(personal);
+    const team = newProviderAccount("claude", "Team");
+    saveProviderAccount(team);
+    selectProviderAccount("claude", "/work", team.id);
+
+    expect(selectedProviderAccountId("claude", "/other")).toBe(
+      DEFAULT_PROVIDER_ACCOUNT_ID,
+    );
+    preferProviderAccount("claude", personal.id);
+    expect(preferredProviderAccountId("claude")).toBe(personal.id);
+    expect(selectedProviderAccountId("claude", "/other")).toBe(personal.id);
+    expect(selectedProviderAccountId("claude", "/work")).toBe(team.id);
+    expect(preferredProviderAccountId("codex")).toBe(
+      DEFAULT_PROVIDER_ACCOUNT_ID,
+    );
+
+    removeProviderAccount("claude", personal.id);
+    expect(selectedProviderAccountId("claude", "/other")).toBe(
+      DEFAULT_PROVIDER_ACCOUNT_ID,
+    );
+    preferProviderAccount("claude", team.id);
+    preferProviderAccount("claude", DEFAULT_PROVIDER_ACCOUNT_ID);
+    expect(preferredProviderAccountId("claude")).toBe(
+      DEFAULT_PROVIDER_ACCOUNT_ID,
+    );
   });
 });
