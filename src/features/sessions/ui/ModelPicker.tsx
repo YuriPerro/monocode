@@ -15,6 +15,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -51,6 +52,12 @@ import { HarnessIcon } from "./HarnessIcon";
 import { Popover } from "../../../shared/ui/Popover";
 import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/model/settings";
+import { ultraEffortCharm, ultraEffortTone } from "../model/ultraEffort";
+import {
+  UltraEffortBurst,
+  UltraEffortGradient,
+  useUltraEffortCharm,
+} from "./UltraEffortCharm";
 import "./ModelPicker.css";
 
 type Props = {
@@ -338,6 +345,14 @@ export function ModelPicker({
   const triggerEffortLabel = triggerEffortSetting
     ? settingValueLabel(triggerEffortSetting, values)
     : undefined;
+  const triggerTone = triggerEffortSetting
+    ? ultraEffortTone(
+        current.harness,
+        triggerEffortSetting.id,
+        settingValue(triggerEffortSetting, values),
+      )
+    : undefined;
+  const charm = useUltraEffortCharm(triggerTone);
   const triggerTitle = [
     HARNESS_TITLE[current.harness],
     current.provider?.name,
@@ -565,6 +580,14 @@ export function ModelPicker({
   }, [recentActive, recentMenu]);
 
   const pickSetting = (setting: ModelSetting, value: string) => {
+    charm.fire(
+      ultraEffortCharm(
+        current.harness,
+        setting.id,
+        settingValue(setting, values),
+        value,
+      ),
+    );
     setSetting(setting, value);
     dismiss(true);
   };
@@ -690,6 +713,7 @@ export function ModelPicker({
           openRecentMenu();
         }}
         onClick={() => togglePicker()}
+        {...charm.chipProps}
         className={`flex h-6.5 max-w-40 items-center gap-1 rounded-md px-1.5 ${
           open
             ? "bg-selection text-content"
@@ -699,7 +723,11 @@ export function ModelPicker({
         <HarnessIcon harness={current.harness} className="size-4 shrink-0" />
         <span className="min-w-0 truncate text-[11px]">{current.name}</span>
         {triggerEffortLabel ? (
-          <span className="shrink-0 text-[11px] text-content/50">
+          <span
+            className={`shrink-0 text-[11px] text-content/50${
+              triggerTone ? " ultra-effort-label" : ""
+            }`}
+          >
             {triggerEffortLabel}
           </span>
         ) : null}
@@ -708,6 +736,14 @@ export function ModelPicker({
           strokeWidth={1.75}
         />
       </button>
+      {charm.burst ? (
+        <UltraEffortBurst
+          key={charm.burst.key}
+          kind={charm.burst.kind}
+          anchor={button}
+          onDone={charm.endBurst}
+        />
+      ) : null}
 
       {open && hideSettings ? (
         <ModelFlyout
@@ -879,6 +915,11 @@ export function ModelPicker({
                   submenu.setting,
                   option.value,
                 );
+                const ultraTone = ultraEffortTone(
+                  current.harness,
+                  submenu.setting.id,
+                  option.value,
+                );
                 return (
                   <button
                     key={option.value}
@@ -894,10 +935,18 @@ export function ModelPicker({
                         : "text-content hover:bg-content/5"
                     } ${tileTone ? "codex-effort-option" : ""}`}
                     data-effort-tone={tileTone}
+                    data-ultra-effort-option={ultraTone}
+                    data-highlighted={highlighted || undefined}
                   >
                     {tileTone ? <EffortTileShimmer /> : null}
                     <span className="min-w-0 flex-1 truncate">
-                      {option.label}
+                      {ultraTone ? (
+                        <span className="ultra-effort-label">
+                          {option.label}
+                        </span>
+                      ) : (
+                        option.label
+                      )}
                     </span>
                     {selected ? (
                       <Check
@@ -1114,6 +1163,9 @@ function SelectPill({
   const value = settingValue(setting, values);
   const valueLabel = settingValueLabel(setting, values);
   const label = settingLabel(setting);
+  const tone = ultraEffortTone(harness, setting.id, value);
+  const charm = useUltraEffortCharm(tone);
+  const gaugeGradientId = `${menuId.replace(/:/g, "")}-ultrathink`;
   const menuSettings = [setting, ...(additionalSettings ?? [])];
   const grouped = menuSettings.length > 1;
   const menuOptions = menuSettings.flatMap((menuSetting) =>
@@ -1136,6 +1188,14 @@ function SelectPill({
     setOpen(true);
   };
   const pick = (pickedSetting: ModelSetting, optionValue: string) => {
+    charm.fire(
+      ultraEffortCharm(
+        harness,
+        pickedSetting.id,
+        settingValue(pickedSetting, values),
+        optionValue,
+      ),
+    );
     onSettingsChange({ ...values, [pickedSetting.id]: optionValue });
     dismiss(true);
   };
@@ -1152,6 +1212,7 @@ function SelectPill({
         data-model-control
         onMouseDown={(event) => event.preventDefault()}
         onClick={() => (open ? dismiss(true) : openPicker())}
+        {...charm.chipProps}
         className={`flex h-6.5 max-w-28 items-center gap-1 rounded-md px-1.5 ${
           open
             ? "bg-selection text-content"
@@ -1159,16 +1220,45 @@ function SelectPill({
         }`}
       >
         {isEffortSetting(setting) ? (
-          <Gauge className="size-3.5 shrink-0" strokeWidth={1.75} />
+          <Gauge
+            className={`size-3.5 shrink-0${tone ? " ultra-effort-icon" : ""}`}
+            strokeWidth={1.75}
+            style={
+              tone === "ultrathink"
+                ? ({
+                    "--ultra-gauge-stroke": `url(#${gaugeGradientId})`,
+                  } as CSSProperties)
+                : undefined
+            }
+          />
         ) : setting.id === "serviceTier" ? (
           <Zap className="size-3.5 shrink-0" strokeWidth={1.75} />
         ) : null}
-        <span className="min-w-0 truncate text-[11px]">{valueLabel}</span>
+        {tone === "ultrathink" ? (
+          <UltraEffortGradient id={gaugeGradientId} />
+        ) : null}
+        <span
+          className={`min-w-0 truncate text-[11px]${
+            tone ? " ultra-effort-label" : ""
+          }`}
+        >
+          {valueLabel}
+        </span>
         <ChevronDown
-          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}`}
+          className={`size-3 shrink-0 text-content/50 ${open ? "rotate-180" : ""}${
+            tone ? " ultra-effort-chevron" : ""
+          }`}
           strokeWidth={1.75}
         />
       </button>
+      {charm.burst ? (
+        <UltraEffortBurst
+          key={charm.burst.key}
+          kind={charm.burst.kind}
+          anchor={button}
+          onDone={charm.endBurst}
+        />
+      ) : null}
 
       {open ? (
         <Popover
@@ -1227,6 +1317,11 @@ function SelectPill({
                     menuSetting,
                     option.value,
                   );
+                  const ultraTone = ultraEffortTone(
+                    harness,
+                    menuSetting.id,
+                    option.value,
+                  );
                   return (
                     <button
                       key={option.value}
@@ -1241,10 +1336,18 @@ function SelectPill({
                         highlighted ? "bg-selection" : "hover:bg-content/5"
                       } ${tileTone ? "codex-effort-option" : ""}`}
                       data-effort-tone={tileTone}
+                      data-ultra-effort-option={ultraTone}
+                      data-highlighted={highlighted || undefined}
                     >
                       {tileTone ? <EffortTileShimmer /> : null}
                       <span className="min-w-0 flex-1 truncate">
-                        {option.label}
+                        {ultraTone ? (
+                          <span className="ultra-effort-label">
+                            {option.label}
+                          </span>
+                        ) : (
+                          option.label
+                        )}
                       </span>
                       {selected ? (
                         <Check
