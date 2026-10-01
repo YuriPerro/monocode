@@ -235,6 +235,8 @@ type Props = {
   hideProjectPicker?: boolean;
   hideBranchPicker?: boolean;
   hideTopBar?: boolean;
+  /** Keep the composer mascot off, e.g. while a sheet covers this composer. */
+  hideRunner?: boolean;
   /** Keeps local file mentions, skills, and app modes off for host sessions. */
   remoteSession?: boolean;
   remoteFeatures?: { attachments: boolean; plan: boolean; draft: boolean };
@@ -534,6 +536,7 @@ export function Composer({
   hideProjectPicker = false,
   hideBranchPicker = false,
   hideTopBar = false,
+  hideRunner = false,
   remoteSession = false,
   remoteFeatures,
   context,
@@ -697,9 +700,6 @@ export function Composer({
   const [mentionActive, setMentionActive] = useState(0);
   const [resendEdited, setResendEdited] = useState(false);
   const [runnerEnabled, setRunnerEnabled] = useState(loadComposerRunner);
-  const [runnerLive, setRunnerLive] = useState(
-    () => busy && loadComposerRunner(),
-  );
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
 
@@ -949,14 +949,6 @@ export function Composer({
     return () =>
       window.removeEventListener(COMPOSER_RUNNER_CHANGE_EVENT, refresh);
   }, []);
-
-  useEffect(() => {
-    if (!runnerEnabled) {
-      setRunnerLive(false);
-      return;
-    }
-    if (busy) setRunnerLive(true);
-  }, [busy, runnerEnabled]);
 
   useEffect(() => {
     setSkillActive(0);
@@ -2676,14 +2668,12 @@ export function Composer({
             </div>
           </div>
         </div>
-        {runnerLive && runnerEnabled && !remote ? (
+        {runnerEnabled && enabled && !remote && !hideRunner ? (
           <ComposerRunner
             boxRef={boxRef}
             cwd={cwd}
             busy={busy}
             signal={runnerSignal}
-            enabled={enabled}
-            onExited={() => setRunnerLive(false)}
           />
         ) : null}
       </div>

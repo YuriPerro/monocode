@@ -575,6 +575,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       }
       hideBranchPicker={!!session.inboxAsk || managed}
       hideTopBar={!!session.inboxAsk}
+      hideRunner={btw.open}
       context={session.context}
       quoteRequest={quoteRequest}
       initialDraft={

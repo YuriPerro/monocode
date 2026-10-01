@@ -1,4 +1,7 @@
-/** Pixel mascot that patrols the composer's top edge while a turn is in flight. */
+/**
+ * Pixel mascot on the composer's top edge: it patrols while a turn is in
+ * flight and sleeps in a corner between turns.
+ */
 
 import { mascotPath } from "../../projects/model/projectMascots";
 import { sessionNeedsInput, type Session } from "./session";
@@ -25,7 +28,7 @@ export const COLLECT_X = 10;
 export const COLLECT_POP_MS = 280;
 export const COLLECT_POP_PX = 16;
 
-/** One short hop in place when a turn ends well. */
+/** One short hop in place: waking up, or cheering a turn that ended well. */
 export const HOP_MS = 360;
 export const HOP_PEAK = 12;
 
@@ -33,10 +36,9 @@ export const HOP_PEAK = 12;
 export const ALERT_SIZE = 8;
 export const ALERT_GAP = 3;
 
-export const EXIT_MS = 560;
-export const EXIT_PEAK = 44;
-export const EXIT_SINK = 20;
-const EXIT_APEX = 0.38;
+/** Where the sleep Zs start, from the sprite's top-left: just above its head. */
+export const ZZZ_X = 9;
+export const ZZZ_Y = -1;
 
 /** First chevron hit this turn: knock-back, stars, then the mascot learns the hop. */
 export const CRASH_RECOIL_PX = 18;
@@ -104,6 +106,33 @@ export const ALERT_PATH = mascotPath([
   "...##...",
 ]);
 
+function zzzGlyph(rows: readonly string[]): { size: number; path: string } {
+  return { size: rows.length, path: mascotPath(rows) };
+}
+
+const SMALL_Z = zzzGlyph([
+  "#####",
+  "...#.",
+  "..#..",
+  ".#...",
+  "#####",
+]);
+
+/** Sleep glyphs in the order they rise: z, Z, z. */
+export const ZZZ_GLYPHS = [
+  SMALL_Z,
+  zzzGlyph([
+    "#######",
+    ".....#.",
+    "....#..",
+    "...#...",
+    "..#....",
+    ".#.....",
+    "#######",
+  ]),
+  SMALL_Z,
+] as const;
+
 type Rect = {
   left: number;
   right: number;
@@ -131,7 +160,7 @@ export type Coin = {
 export type RunnerPose = {
   /** Sprite center X, in box coordinates. */
   x: number;
-  /** Feet height above the top border. Negative sinks behind the box. */
+  /** Feet height above the top border. */
   y: number;
   facing: 1 | -1;
   airborne: boolean;
@@ -171,28 +200,35 @@ export function runnerSignal(session: Session): RunnerSignal {
 }
 
 /**
- * `running` patrols the ledge, `waiting` stands still while the turn needs
- * input, and `cheering` or `dizzy` react to how it ended before `exiting`.
+ * `asleep` sits in the corner with no frame loop, and `waking` is its hop when
+ * a turn starts. Then it is `running` the ledge, or `waiting` in place while
+ * the turn needs input. When the turn ends it is `cheering` or `dizzy` about
+ * the outcome, then `returning` to the corner to sleep.
  */
 export type RunnerPhase =
+  | "asleep"
+  | "waking"
   | "running"
   | "waiting"
   | "cheering"
   | "dizzy"
-  | "exiting";
+  | "returning";
 
 export type RunnerCue = {
   busy: boolean;
   needsInput: boolean;
   outcome: TurnOutcome;
-  /** The phase's own move is over: landed and not stunned, hop or daze done. */
+  /**
+   * The phase's own move is over: landed and not stunned, hop or daze done,
+   * or back in the corner.
+   */
   settled: boolean;
 };
 
 function turnEndPhase(outcome: TurnOutcome): RunnerPhase {
   if (outcome === "failed") return "dizzy";
   if (outcome === "done") return "cheering";
-  return "exiting";
+  return "returning";
 }
 
 /** Next phase for one frame. A running mascot lands before it stops or reacts. */
@@ -201,23 +237,67 @@ export function nextRunnerPhase(
   cue: RunnerCue,
 ): RunnerPhase {
   if (cue.busy) {
-    if (phase === "running") {
-      return cue.needsInput && cue.settled ? "waiting" : "running";
+    switch (phase) {
+      case "asleep":
+        return "waking";
+      case "waking":
+        return cue.settled ? "running" : "waking";
+      case "running":
+        return cue.needsInput && cue.settled ? "waiting" : "running";
+      case "waiting":
+        return cue.needsInput ? "waiting" : "running";
+      default:
+        return "running";
     }
-    if (phase === "waiting") return cue.needsInput ? "waiting" : "running";
-    return "running";
   }
   switch (phase) {
+    case "asleep":
+      return "asleep";
+    case "waking":
     case "running":
-      return cue.settled ? turnEndPhase(cue.outcome) : "running";
+      return cue.settled ? turnEndPhase(cue.outcome) : phase;
     case "waiting":
       return turnEndPhase(cue.outcome);
     case "cheering":
     case "dizzy":
-      return cue.settled ? "exiting" : phase;
-    case "exiting":
-      return "exiting";
+      return cue.settled ? "returning" : phase;
+    case "returning":
+      return cue.settled ? "asleep" : "returning";
   }
+}
+
+/**
+ * Where the mascot sleeps, as a distance along the inset track: the end away
+ * from the chevron, or the left end when the chevron sits near the middle.
+ */
+export function sleepAlong(
+  trackWidth: number,
+  obstacle: Obstacle | null,
+): number {
+  if (!obstacle) return 0;
+  const center = (obstacle.left + obstacle.right) / 2;
+  const margin = obstacle.right - obstacle.left;
+  return center < trackWidth / 2 - margin
+    ? Math.max(0, trackWidth - RUNNER_INSET * 2)
+    : 0;
+}
+
+/** Run toward the sleep spot. It is an end of the track, so the step lands on it. */
+export function stepHome(
+  along: number,
+  facing: 1 | -1,
+  home: number,
+  dtMs: number,
+  trackWidth: number,
+): { along: number; facing: 1 | -1; home: boolean } {
+  if (along === home) return { along, facing, home: true };
+  const toward: 1 | -1 = home < along ? -1 : 1;
+  const stepped = stepAlong(along, toward, dtMs, trackWidth);
+  return {
+    along: stepped.along,
+    facing: toward,
+    home: stepped.along === home,
+  };
 }
 
 export function pingPong(
@@ -435,31 +515,6 @@ export function pickCoinX(
     return x;
   }
   return min + random() * (max - min);
-}
-
-/**
- * Vertical hop that peaks, then drops below the rim so the sprite can clip
- * away behind the composer.
- */
-export function exitJumpY(
-  t: number,
-  peak = EXIT_PEAK,
-  sink = EXIT_SINK,
-): number {
-  if (t <= 0) return 0;
-  if (t >= 1) return -sink;
-  if (t < EXIT_APEX) {
-    const u = t / EXIT_APEX;
-    return peak * (1 - (1 - u) * (1 - u));
-  }
-  const u = (t - EXIT_APEX) / (1 - EXIT_APEX);
-  return peak + (-sink - peak) * u * u;
-}
-
-/** How many pixels to clip off the sprite bottom as it sinks behind the rim. */
-export function spriteClipBottom(y: number, size = RUNNER_SIZE): number {
-  if (y >= 0) return 0;
-  return Math.min(size, Math.ceil(-y));
 }
 
 /**

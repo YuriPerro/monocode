@@ -9,8 +9,6 @@ import {
   CRASH_RECOIL_PX,
   CRASH_SHAKE_MS,
   CRASH_STUN_MS,
-  EXIT_PEAK,
-  EXIT_SINK,
   HOP_MS,
   HOP_PEAK,
   JUMP_LEAD,
@@ -18,7 +16,6 @@ import {
   RUNNER_SIZE,
   STAR_COUNT,
   coinCollected,
-  exitJumpY,
   hitsChevron,
   hopDone,
   hopY,
@@ -33,8 +30,9 @@ import {
   runnerPose,
   runnerTrack,
   scaleTrackX,
-  spriteClipBottom,
+  sleepAlong,
   stepAlong,
+  stepHome,
   stunDone,
   stunShake,
   stunStars,
@@ -165,19 +163,7 @@ describe("composerRunner", () => {
     expect(COIN_GAP_MIN_MS).toBeGreaterThanOrEqual(6000);
   });
 
-  it("hops up then drops behind the rim on the way out", () => {
-    expect(exitJumpY(0)).toBe(0);
-    expect(exitJumpY(0.38)).toBeCloseTo(EXIT_PEAK);
-    expect(exitJumpY(1)).toBe(-EXIT_SINK);
-    expect(exitJumpY(0.2)).toBeGreaterThan(0);
-    expect(exitJumpY(0.2)).toBeLessThan(EXIT_PEAK);
-    expect(exitJumpY(0.9)).toBeLessThan(0);
-    expect(spriteClipBottom(8)).toBe(0);
-    expect(spriteClipBottom(-4)).toBe(4);
-    expect(spriteClipBottom(-40)).toBe(16);
-  });
-
-  it("hops once in place for a turn that ended well", () => {
+  it("hops once in place to wake or cheer", () => {
     expect(hopY(0)).toBe(0);
     expect(hopY(HOP_MS / 2)).toBeCloseTo(HOP_PEAK);
     expect(hopY(HOP_MS)).toBe(0);
@@ -248,26 +234,71 @@ describe("composerRunner", () => {
     expect(nextRunnerPhase("waiting", cue())).toBe("running");
   });
 
-  it("reacts to how the turn ended, then exits", () => {
+  it("wakes with a hop when a turn starts, then runs", () => {
+    expect(nextRunnerPhase("asleep", cue({ settled: false }))).toBe("waking");
+    expect(nextRunnerPhase("waking", cue({ settled: false }))).toBe("waking");
+    expect(nextRunnerPhase("waking", cue())).toBe("running");
+    expect(nextRunnerPhase("asleep", cue({ busy: false }))).toBe("asleep");
+  });
+
+  it("reacts to how the turn ended, then heads home to sleep", () => {
     const ended = (outcome: RunnerCue["outcome"], settled = true) =>
       cue({ busy: false, outcome, settled });
     expect(nextRunnerPhase("running", ended("done"))).toBe("cheering");
     expect(nextRunnerPhase("running", ended("failed"))).toBe("dizzy");
-    expect(nextRunnerPhase("running", ended("none"))).toBe("exiting");
+    expect(nextRunnerPhase("running", ended("none"))).toBe("returning");
     expect(nextRunnerPhase("running", ended("done", false))).toBe("running");
     expect(nextRunnerPhase("waiting", ended("failed", false))).toBe("dizzy");
+    expect(nextRunnerPhase("waking", ended("done", false))).toBe("waking");
+    expect(nextRunnerPhase("waking", ended("done"))).toBe("cheering");
 
     expect(nextRunnerPhase("cheering", ended("done", false))).toBe("cheering");
-    expect(nextRunnerPhase("cheering", ended("done"))).toBe("exiting");
+    expect(nextRunnerPhase("cheering", ended("done"))).toBe("returning");
     expect(nextRunnerPhase("dizzy", ended("failed", false))).toBe("dizzy");
-    expect(nextRunnerPhase("dizzy", ended("failed"))).toBe("exiting");
-    expect(nextRunnerPhase("exiting", ended("done"))).toBe("exiting");
+    expect(nextRunnerPhase("dizzy", ended("failed"))).toBe("returning");
+    expect(nextRunnerPhase("returning", ended("done", false))).toBe(
+      "returning",
+    );
+    expect(nextRunnerPhase("returning", ended("done"))).toBe("asleep");
   });
 
-  it("runs again when a new turn starts mid-reaction", () => {
-    for (const phase of ["cheering", "dizzy", "exiting"] as const) {
+  it("runs again when a new turn starts before the mascot is asleep", () => {
+    for (const phase of ["cheering", "dizzy", "returning"] as const) {
       expect(nextRunnerPhase(phase, cue({ settled: false }))).toBe("running");
     }
+  });
+
+  it("sleeps at the end of the track away from the chevron", () => {
+    const end = 400 - RUNNER_INSET * 2;
+    expect(sleepAlong(400, null)).toBe(0);
+    expect(sleepAlong(400, { left: 188, right: 212, height: 42 })).toBe(0);
+    expect(sleepAlong(400, { left: 220, right: 244, height: 42 })).toBe(0);
+    expect(sleepAlong(400, { left: 40, right: 64, height: 42 })).toBe(end);
+    expect(sleepAlong(400, { left: 330, right: 354, height: 42 })).toBe(0);
+    expect(sleepAlong(8, null)).toBe(0);
+  });
+
+  it("runs home facing the corner and stops exactly on it", () => {
+    const out = stepHome(200, 1, 0, 500, 380);
+    expect(out).toEqual({ along: 120, facing: -1, home: false });
+
+    const arrived = stepHome(40, -1, 0, 500, 380);
+    expect(arrived).toEqual({ along: 0, facing: -1, home: true });
+
+    const right = stepHome(370, -1, 380, 500, 380);
+    expect(right).toEqual({ along: 380, facing: 1, home: true });
+
+    expect(stepHome(0, -1, 0, 16, 380)).toEqual({
+      along: 0,
+      facing: -1,
+      home: true,
+    });
+  });
+
+  it("keeps a sleeping mascot in its corner when the track resizes", () => {
+    const end = 380;
+    expect(scaleTrackX(end, end, 180)).toBeCloseTo(180);
+    expect(scaleTrackX(0, end, 180)).toBe(0);
   });
 
   it("ignores a control that is not sitting on the top border", () => {

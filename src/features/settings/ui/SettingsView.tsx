@@ -1135,7 +1135,7 @@ function ChatPage() {
         <Row
           id="composer-mascot"
           label="Composer mascot"
-          description="When a turn is running, the project mascot runs along the composer, bonks the scroll-to-latest button the first time, then jumps it, and sometimes grabs a coin."
+          description="The project mascot sleeps in a corner of the composer between turns. While a turn is live, it runs along the composer, bonks the scroll-to-latest button the first time, then jumps it, and sometimes grabs a coin."
         >
           <Toggle
             label="Composer mascot"

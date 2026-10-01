@@ -10,14 +10,14 @@ import {
   COIN_SIZE,
   COLLECT_POP_MS,
   COLLECT_POP_PX,
-  EXIT_MS,
-  EXIT_SINK,
   STAR_COUNT,
   STAR_EDGE_PATH,
   STAR_FACE_PATH,
   STAR_SIZE,
+  ZZZ_GLYPHS,
+  ZZZ_X,
+  ZZZ_Y,
   coinCollected,
-  exitJumpY,
   hitsChevron,
   hopDone,
   hopY,
@@ -31,9 +31,10 @@ import {
   poseAt,
   recoilAlong,
   scaleTrackX,
+  sleepAlong,
   stepAlong,
+  stepHome,
   runnerTrack,
-  spriteClipBottom,
   stunDone,
   stunShake,
   stunStars,
@@ -60,8 +61,6 @@ type Props = {
   busy: boolean;
   /** Session cues; omit for no input pause and no turn-end reaction. */
   signal?: RunnerSignal;
-  enabled?: boolean;
-  onExited: () => void;
 };
 
 type LiveCoin = Coin & {
@@ -73,31 +72,32 @@ const COIN_SVG = `<svg viewBox="0 0 8 8" width="${COIN_SIZE}" height="${COIN_SIZ
 const STAR_SVG = `<svg viewBox="0 0 8 8" width="${STAR_SIZE}" height="${STAR_SIZE}" shape-rendering="crispEdges" fill="#f4e27a" aria-hidden="true"><path class="composer-coin-face" d="${STAR_FACE_PATH}"/><path class="composer-coin-edge" d="${STAR_EDGE_PATH}"/></svg>`;
 const GEOMETRY_SAMPLE_MS = 100;
 
-/** Project pixel mascot running the composer's top ledge while a turn is live. */
+/**
+ * Project pixel mascot on the composer's top ledge. Between turns it sleeps in
+ * a corner on CSS animation alone; the frame loop runs only while it is awake.
+ */
 export function ComposerRunner({
   boxRef,
   cwd,
   busy,
   signal = QUIET_RUNNER_SIGNAL,
-  enabled = true,
-  onExited,
 }: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
   const spriteRef = useRef<HTMLDivElement>(null);
   const coinsRef = useRef<HTMLDivElement>(null);
   const starsRef = useRef<HTMLDivElement>(null);
   const alertRef = useRef<HTMLDivElement>(null);
+  const zzzRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
   const signalRef = useRef(signal);
-  const enabledRef = useRef(enabled);
-  const onExitedRef = useRef(onExited);
+  const wakeRef = useRef(() => {});
   busyRef.current = busy;
   signalRef.current = signal;
-  enabledRef.current = enabled;
-  onExitedRef.current = onExited;
 
   const project = projectName(cwd);
   const key = projectKey(cwd);
+  // Mascot and color picks fire no change event; re-read them as each turn
+  // starts and ends, since the sleeping mascot outlives a single turn.
   const appearance = useMemo(() => {
     return {
       name: resolveTabGroupMascot(key, loadTabGroupMascots()),
@@ -108,7 +108,7 @@ export function ComposerRunner({
         project,
       ),
     };
-  }, [key, project]);
+  }, [key, project, busy]);
 
   useLayoutEffect(() => {
     const layer = layerRef.current;
@@ -116,7 +116,10 @@ export function ComposerRunner({
     const coinLayer = coinsRef.current;
     const starLayer = starsRef.current;
     const alert = alertRef.current;
-    if (!layer || !sprite || !coinLayer || !starLayer || !alert) return;
+    const zzz = zzzRef.current;
+    if (!layer || !sprite || !coinLayer || !starLayer || !alert || !zzz) {
+      return;
+    }
 
     let along = 0;
     let facing: 1 | -1 = 1;
@@ -124,11 +127,11 @@ export function ComposerRunner({
     let last = performance.now();
     let raf = 0;
     let coinId = 0;
-    let nextCoinAt = last + nextCoinDelay(true);
-    let phase: RunnerPhase = "running";
+    let nextCoinAt = 0;
+    let phase: RunnerPhase = "asleep";
     let phaseAt = last;
     let grounded = true;
-    let finished = false;
+    let atHome = true;
     let stunning = false;
     let stunAt = 0;
     let hitAlong = 0;
@@ -147,7 +150,7 @@ export function ComposerRunner({
       el.className = "absolute top-0 left-0";
       el.style.width = `${STAR_SIZE}px`;
       el.style.height = `${STAR_SIZE}px`;
-      el.style.opacity = "0";
+      el.style.display = "none";
       el.style.filter = "drop-shadow(0 1px 0 rgba(0,0,0,0.45))";
       el.style.transform =
         "translate3d(var(--star-x, -64px), var(--star-y, -64px), 0)";
@@ -179,11 +182,12 @@ export function ComposerRunner({
         `${Math.round(boxTop - RUNNER_SIZE - y + 1 + shakeY)}px`,
       );
       sprite.style.setProperty("--runner-facing", String(facing));
-      sprite.style.setProperty("--runner-clip", `${spriteClipBottom(y)}px`);
     };
 
+    // Hidden stars leave the layout entirely so their blinking frames stop
+    // animating while the mascot sleeps.
     const hideStars = () => {
-      for (const el of starEls) el.style.opacity = "0";
+      for (const el of starEls) el.style.display = "none";
     };
 
     const placeStars = (
@@ -202,7 +206,7 @@ export function ComposerRunner({
         const el = starEls[i];
         const star = poses[i];
         if (!star) {
-          el.style.opacity = "0";
+          el.style.display = "none";
           continue;
         }
         el.style.setProperty(
@@ -214,6 +218,7 @@ export function ComposerRunner({
           `${Math.round(spriteTop + star.dy)}px`,
         );
         el.style.opacity = String(star.opacity);
+        el.style.display = "";
       }
     };
 
@@ -263,49 +268,21 @@ export function ComposerRunner({
       }
     };
 
-    const enter = (next: RunnerPhase, now: number) => {
-      const live = phase === "running" || phase === "waiting";
-      if (phase === "dizzy") endStun();
-      if (next === "running" && !live) {
-        // A new turn cut the reaction short: bonk the chevron afresh.
-        learned = reduced;
-        finished = false;
-      }
-      if (live && next !== "running" && next !== "waiting") {
-        for (const coin of coins) {
-          if (coin.collectedAt == null) coin.collectedAt = now;
-        }
-      }
-      if (next === "dizzy") sprite.classList.add("mascot-stunned");
-      phase = next;
-      phaseAt = now;
-    };
-
-    const apply = (now: number) => {
-      const dt = Math.min(now - last, 48);
-      last = now;
-
+    const measure = (now: number, force: boolean): RunnerTrack | null => {
       const box = boxRef.current;
-      if (!enabledRef.current) {
+      if (!box) {
         showLayer(false);
-        endStun();
-        hideAlert();
-        if (!busyRef.current && !finished) {
-          finished = true;
-          clearCoins();
-          onExitedRef.current();
-        }
-        return;
-      }
-      if (!box || document.hidden) {
-        showLayer(false);
-        return;
+        return null;
       }
 
       // Reading layout every animation frame forces WebKit to flush changes
       // when a new transcript block arrives. The runner can animate from the
       // last measured track while geometry is refreshed at a lower rate.
-      if (box !== geometryBox || now - geometryAt >= GEOMETRY_SAMPLE_MS) {
+      if (
+        force ||
+        box !== geometryBox ||
+        now - geometryAt >= GEOMETRY_SAMPLE_MS
+      ) {
         const shell = box.closest("[data-composer]");
         const review = shell?.querySelector("[data-session-review]");
         const queue = shell?.querySelector("[data-message-queue-card]");
@@ -330,16 +307,15 @@ export function ComposerRunner({
         geometryAt = now;
       }
       const track = cachedTrack;
-      if (!track) return;
-      if (track.width <= 0) {
+      if (!track || track.width <= 0) {
         showLayer(false);
-        return;
+        return null;
       }
       showLayer(true);
 
-      const insetTrack = Math.max(0, track.width - RUNNER_INSET * 2);
       if (prevWidth > 0 && prevWidth !== track.width) {
         const prevInset = Math.max(0, prevWidth - RUNNER_INSET * 2);
+        const insetTrack = Math.max(0, track.width - RUNNER_INSET * 2);
         along = scaleTrackX(along, prevInset, insetTrack);
         hitAlong = scaleTrackX(hitAlong, prevInset, insetTrack);
         for (const coin of coins) {
@@ -347,6 +323,67 @@ export function ComposerRunner({
         }
       }
       prevWidth = track.width;
+      return track;
+    };
+
+    const placeAsleep = (track: RunnerTrack) => {
+      const x = poseAt(along, facing, track.width, null).x;
+      placeSprite(track.left, track.top, x, 0, facing);
+      zzz.style.setProperty(
+        "--zzz-x",
+        `${Math.round(track.left + x - RUNNER_SIZE / 2 + ZZZ_X)}px`,
+      );
+      zzz.style.setProperty(
+        "--zzz-y",
+        `${Math.round(track.top - RUNNER_SIZE + 1 + ZZZ_Y)}px`,
+      );
+    };
+
+    const fallAsleep = (track: RunnerTrack | null) => {
+      clearCoins();
+      endStun();
+      hideAlert();
+      sprite.classList.add("mascot-asleep");
+      zzz.style.display = "";
+      if (track) placeAsleep(track);
+    };
+
+    const enter = (next: RunnerPhase, now: number) => {
+      const live =
+        phase === "waking" || phase === "running" || phase === "waiting";
+      if (phase === "dizzy") endStun();
+      if (phase === "asleep") {
+        sprite.classList.remove("mascot-asleep");
+        zzz.style.display = "none";
+      }
+      if (next === "waking" || (next === "running" && !live)) {
+        // A new turn: bonk the chevron afresh and give the first coin a beat.
+        learned = reduced;
+        nextCoinAt = now + nextCoinDelay(true);
+      }
+      if (live && next !== "running" && next !== "waiting") {
+        for (const coin of coins) {
+          if (coin.collectedAt == null) coin.collectedAt = now;
+        }
+      }
+      if (next === "dizzy") sprite.classList.add("mascot-stunned");
+      phase = next;
+      phaseAt = now;
+    };
+
+    /** One frame. Returns false once the mascot is asleep and the loop can stop. */
+    const apply = (now: number): boolean => {
+      const dt = Math.min(now - last, 48);
+      last = now;
+
+      if (document.hidden) {
+        showLayer(false);
+        return true;
+      }
+      const track = measure(now, false);
+      if (!track) return true;
+      const insetTrack = Math.max(0, track.width - RUNNER_INSET * 2);
+      const obstacle = cachedObstacle;
 
       const signal = signalRef.current;
       const elapsed = now - phaseAt;
@@ -357,40 +394,49 @@ export function ComposerRunner({
         settled:
           phase === "running"
             ? grounded && !stunning
-            : phase === "cheering"
+            : phase === "waking" || phase === "cheering"
               ? reduced || hopDone(elapsed)
               : phase === "dizzy"
                 ? reduced || stunDone(elapsed)
-                : true,
+                : phase === "returning"
+                  ? atHome
+                  : true,
       });
       if (next !== phase) enter(next, now);
+      if (phase === "asleep") {
+        fallAsleep(track);
+        return false;
+      }
 
       if (phase !== "waiting") hideAlert();
-      if (phase === "cheering" || phase === "dizzy" || phase === "exiting") {
+      const at = now - phaseAt;
+      if (phase === "returning") {
         fadeCoins(now);
-        const at = now - phaseAt;
+        const home = sleepAlong(track.width, obstacle);
+        const stepped = reduced
+          ? { along: home, facing, home: true }
+          : stepHome(along, facing, home, dt, insetTrack);
+        along = stepped.along;
+        facing = stepped.facing;
+        atHome = stepped.home;
+        // Hop the chevron on the way home rather than bonking it again.
+        const pose = poseAt(along, facing, track.width, obstacle);
+        placeSprite(track.left, track.top, pose.x, pose.y, pose.facing);
+        return true;
+      }
+      if (phase === "waking" || phase === "cheering" || phase === "dizzy") {
+        fadeCoins(now);
         const x = poseAt(along, facing, track.width, null).x;
-        if (phase === "cheering") {
-          placeSprite(track.left, track.top, x, reduced ? 0 : hopY(at), facing);
-          return;
-        }
         if (phase === "dizzy") {
           const shake = reduced ? { x: 0, y: 0 } : stunShake(at);
           placeSprite(track.left, track.top, x, 0, facing, shake.x, shake.y);
           if (!reduced) {
             placeStars(track.left, track.top, x, 0, at, shake.x, shake.y);
           }
-          return;
+          return true;
         }
-        const t = reduced ? 1 : Math.min(1, at / EXIT_MS);
-        const y = reduced ? -EXIT_SINK : exitJumpY(t);
-        placeSprite(track.left, track.top, x, y, facing);
-        if (t >= 1 && !finished) {
-          finished = true;
-          clearCoins();
-          onExitedRef.current();
-        }
-        return;
+        placeSprite(track.left, track.top, x, reduced ? 0 : hopY(at), facing);
+        return true;
       }
 
       if (phase === "running" && !reduced && !stunning) {
@@ -399,7 +445,6 @@ export function ComposerRunner({
         facing = stepped.facing;
       }
 
-      const obstacle = cachedObstacle;
       if (stunning) {
         along = recoilAlong(hitAlong, hitFacing, now - stunAt, insetTrack);
         facing = hitFacing;
@@ -520,20 +565,50 @@ export function ComposerRunner({
       );
       if (phase === "waiting") showAlert(track.left, track.top, pose.x, pose.y);
       grounded = !pose.airborne;
+      return true;
     };
 
-    apply(last);
+    const mountTrack = measure(last, false);
+    if (mountTrack) along = sleepAlong(mountTrack.width, cachedObstacle);
+    fallAsleep(mountTrack);
+
+    // While asleep there is no frame loop, so layout changes that move the
+    // ledge (typing a new line, a split pane resizing) re-place the mascot.
+    const observer = new ResizeObserver(() => {
+      if (phase !== "asleep") return;
+      const track = measure(performance.now(), true);
+      if (track) placeAsleep(track);
+    });
+    const box = boxRef.current;
+    for (const el of [
+      box,
+      box?.closest("[data-composer]"),
+      box?.closest("[data-session-drop]"),
+    ]) {
+      if (el) observer.observe(el);
+    }
+
     const tick = (now: number) => {
-      apply(now);
+      raf = apply(now) ? requestAnimationFrame(tick) : 0;
+    };
+    wakeRef.current = () => {
+      if (raf) return;
+      last = performance.now();
       raf = requestAnimationFrame(tick);
     };
-    raf = requestAnimationFrame(tick);
     return () => {
+      wakeRef.current = () => {};
+      observer.disconnect();
       cancelAnimationFrame(raf);
       clearCoins();
+      for (const el of starEls) el.remove();
       showLayer(false);
     };
   }, [boxRef]);
+
+  useLayoutEffect(() => {
+    if (busy) wakeRef.current();
+  }, [busy]);
 
   return createPortal(
     <div
@@ -544,6 +619,28 @@ export function ComposerRunner({
     >
       <div ref={coinsRef} className="absolute inset-0" />
       <div
+        ref={zzzRef}
+        className="composer-zzz absolute top-0 left-0 text-content/50"
+        style={{
+          display: "none",
+          transform: "translate3d(var(--zzz-x, -64px), var(--zzz-y, -64px), 0)",
+        }}
+      >
+        {ZZZ_GLYPHS.map((glyph, index) => (
+          <svg
+            key={index}
+            viewBox={`0 0 ${glyph.size} ${glyph.size}`}
+            width={glyph.size}
+            height={glyph.size}
+            shapeRendering="crispEdges"
+            fill="currentColor"
+            aria-hidden
+          >
+            <path d={glyph.path} />
+          </svg>
+        ))}
+      </div>
+      <div
         ref={spriteRef}
         className="absolute top-0 left-0 origin-bottom drop-shadow-[0_1px_0_rgba(0,0,0,0.45)] will-change-transform"
         style={{
@@ -551,7 +648,6 @@ export function ComposerRunner({
           height: RUNNER_SIZE,
           transform:
             "translate3d(var(--runner-x, -64px), var(--runner-y, -64px), 0) scaleX(var(--runner-facing, 1))",
-          clipPath: "inset(0 0 var(--runner-clip, 0px) 0)",
         }}
       >
         <ProjectMascot
