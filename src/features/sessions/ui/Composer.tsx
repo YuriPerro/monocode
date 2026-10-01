@@ -112,6 +112,7 @@ import {
 } from "../../skills/model/skills";
 import { AccessPicker } from "./AccessPicker";
 import { ComposerRunner } from "./ComposerRunner";
+import type { RunnerSignal } from "../model/composerRunner";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { BranchPicker } from "../../source-control/ui/BranchPicker";
@@ -247,6 +248,8 @@ type Props = {
   handoffCard?: HandoffComposerCard;
   question?: UserQuestionPrompt;
   busy?: boolean;
+  /** Session cues for the composer mascot: input pending, how the turn ended. */
+  runnerSignal?: RunnerSignal;
   /** Allow typed text to replace Stop with Send while a turn is running. */
   allowBusySubmit?: boolean;
   editLastTurnSupported?: boolean;
@@ -543,6 +546,7 @@ export function Composer({
   handoffCard,
   question,
   busy = false,
+  runnerSignal,
   allowBusySubmit = true,
   editLastTurnSupported = false,
   lastTurnRecall = null,
@@ -2677,6 +2681,7 @@ export function Composer({
             boxRef={boxRef}
             cwd={cwd}
             busy={busy}
+            signal={runnerSignal}
             enabled={enabled}
             onExited={() => setRunnerLive(false)}
           />

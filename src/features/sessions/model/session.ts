@@ -305,6 +305,8 @@ export type Block = {
   providerTurnId?: string;
   /** User turn saved to the session but not submitted to the harness yet. */
   draft?: boolean;
+  /** The user stopped this turn before the agent finished it. */
+  stopped?: boolean;
   /** This user turn activated MonoCode app access for its thread. */
   monocode?: boolean;
   /** The Plan or Orchestrator mode this user turn was sent in. */
@@ -690,6 +692,19 @@ export function sessionNeedsInput(session: Session): boolean {
     !session.worktreeRemoved &&
     (hasPendingApproval(session.blocks) || session.pendingQuestion != null)
   );
+}
+
+/** Flag the latest sent user turn as stopped by the user. */
+export function markTurnStopped(session: Session): Session {
+  for (let i = session.blocks.length - 1; i >= 0; i--) {
+    const block = session.blocks[i];
+    if (block.role !== "user" || block.draft) continue;
+    if (block.stopped) return session;
+    const blocks = session.blocks.slice();
+    blocks[i] = { ...block, stopped: true };
+    return { ...session, blocks };
+  }
+  return session;
 }
 
 /** The single unsent user turn held by a session, when present. */

@@ -1,6 +1,7 @@
 /** Pixel mascot that patrols the composer's top edge while a turn is in flight. */
 
 import { mascotPath } from "../../projects/model/projectMascots";
+import { sessionNeedsInput, type Session } from "./session";
 
 export const RUNNER_SIZE = 16;
 export const RUNNER_SPEED_PX = 160;
@@ -23,6 +24,14 @@ export const COIN_FIRST_MAX_MS = 9000;
 export const COLLECT_X = 10;
 export const COLLECT_POP_MS = 280;
 export const COLLECT_POP_PX = 16;
+
+/** One short hop in place when a turn ends well. */
+export const HOP_MS = 360;
+export const HOP_PEAK = 12;
+
+/** Pixel "!" over the mascot's head while the turn waits on the user. */
+export const ALERT_SIZE = 8;
+export const ALERT_GAP = 3;
 
 export const EXIT_MS = 560;
 export const EXIT_PEAK = 44;
@@ -84,6 +93,17 @@ export const STAR_EDGE_PATH = mascotPath([
   "........",
 ]);
 
+export const ALERT_PATH = mascotPath([
+  "...##...",
+  "...##...",
+  "...##...",
+  "...##...",
+  "...##...",
+  "........",
+  "...##...",
+  "...##...",
+]);
+
 type Rect = {
   left: number;
   right: number;
@@ -117,6 +137,89 @@ export type RunnerPose = {
   airborne: boolean;
 };
 
+/** How the latest turn ended. `none` covers a user stop and anything unclear. */
+export type TurnOutcome = "done" | "failed" | "none";
+
+/** The session cues the runner reacts to. */
+export type RunnerSignal = {
+  /** The live turn waits on an approval or an answer. */
+  needsInput: boolean;
+  outcome: TurnOutcome;
+};
+
+/** No input pause and no turn-end reaction, for composers without a session. */
+export const QUIET_RUNNER_SIGNAL: RunnerSignal = {
+  needsInput: false,
+  outcome: "none",
+};
+
+/**
+ * Read the runner's cues from a session. A turn failed when an error notice
+ * follows its user block; a turn the user stopped has no outcome.
+ */
+export function runnerSignal(session: Session): RunnerSignal {
+  const needsInput = sessionNeedsInput(session);
+  let failed = false;
+  for (let i = session.blocks.length - 1; i >= 0; i--) {
+    const block = session.blocks[i];
+    if (block.role === "system" && block.notice === "error") failed = true;
+    if (block.role !== "user" || block.draft) continue;
+    const outcome = block.stopped ? "none" : failed ? "failed" : "done";
+    return { needsInput, outcome };
+  }
+  return { needsInput, outcome: "none" };
+}
+
+/**
+ * `running` patrols the ledge, `waiting` stands still while the turn needs
+ * input, and `cheering` or `dizzy` react to how it ended before `exiting`.
+ */
+export type RunnerPhase =
+  | "running"
+  | "waiting"
+  | "cheering"
+  | "dizzy"
+  | "exiting";
+
+export type RunnerCue = {
+  busy: boolean;
+  needsInput: boolean;
+  outcome: TurnOutcome;
+  /** The phase's own move is over: landed and not stunned, hop or daze done. */
+  settled: boolean;
+};
+
+function turnEndPhase(outcome: TurnOutcome): RunnerPhase {
+  if (outcome === "failed") return "dizzy";
+  if (outcome === "done") return "cheering";
+  return "exiting";
+}
+
+/** Next phase for one frame. A running mascot lands before it stops or reacts. */
+export function nextRunnerPhase(
+  phase: RunnerPhase,
+  cue: RunnerCue,
+): RunnerPhase {
+  if (cue.busy) {
+    if (phase === "running") {
+      return cue.needsInput && cue.settled ? "waiting" : "running";
+    }
+    if (phase === "waiting") return cue.needsInput ? "waiting" : "running";
+    return "running";
+  }
+  switch (phase) {
+    case "running":
+      return cue.settled ? turnEndPhase(cue.outcome) : "running";
+    case "waiting":
+      return turnEndPhase(cue.outcome);
+    case "cheering":
+    case "dizzy":
+      return cue.settled ? "exiting" : phase;
+    case "exiting":
+      return "exiting";
+  }
+}
+
 export function pingPong(
   distance: number,
   length: number,
@@ -140,6 +243,15 @@ function arc(
   if (end <= start || x <= start || x >= end) return 0;
   const t = (x - start) / (end - start);
   return 4 * t * (1 - t) * height;
+}
+
+/** Feet height through the hop in place: 0 at both ends, `HOP_PEAK` halfway. */
+export function hopY(elapsedMs: number): number {
+  return arc(elapsedMs, 0, HOP_MS, HOP_PEAK, 0);
+}
+
+export function hopDone(elapsedMs: number): boolean {
+  return elapsedMs >= HOP_MS;
 }
 
 /** Feet peak so the sprite's body meets the coin instead of its shoes. */

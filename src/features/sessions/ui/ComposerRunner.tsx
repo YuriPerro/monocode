@@ -1,6 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
+  ALERT_GAP,
+  ALERT_PATH,
+  ALERT_SIZE,
   COIN_EDGE_PATH,
   COIN_FACE_PATH,
   COIN_HOVER,
@@ -16,8 +19,11 @@ import {
   coinCollected,
   exitJumpY,
   hitsChevron,
+  hopDone,
+  hopY,
   jumpHeight,
   nextCoinDelay,
+  nextRunnerPhase,
   obstacleFromRects,
   pickCoinX,
   RUNNER_INSET,
@@ -31,8 +37,11 @@ import {
   stunDone,
   stunShake,
   stunStars,
+  QUIET_RUNNER_SIGNAL,
   type Coin,
   type Obstacle,
+  type RunnerPhase,
+  type RunnerSignal,
   type RunnerTrack,
 } from "../model/composerRunner";
 import { projectKey, projectName } from "../../../shared/lib/paths";
@@ -49,6 +58,8 @@ type Props = {
   boxRef: RefObject<HTMLElement | null>;
   cwd: string;
   busy: boolean;
+  /** Session cues; omit for no input pause and no turn-end reaction. */
+  signal?: RunnerSignal;
   enabled?: boolean;
   onExited: () => void;
 };
@@ -67,6 +78,7 @@ export function ComposerRunner({
   boxRef,
   cwd,
   busy,
+  signal = QUIET_RUNNER_SIGNAL,
   enabled = true,
   onExited,
 }: Props) {
@@ -74,10 +86,13 @@ export function ComposerRunner({
   const spriteRef = useRef<HTMLDivElement>(null);
   const coinsRef = useRef<HTMLDivElement>(null);
   const starsRef = useRef<HTMLDivElement>(null);
+  const alertRef = useRef<HTMLDivElement>(null);
   const busyRef = useRef(busy);
+  const signalRef = useRef(signal);
   const enabledRef = useRef(enabled);
   const onExitedRef = useRef(onExited);
   busyRef.current = busy;
+  signalRef.current = signal;
   enabledRef.current = enabled;
   onExitedRef.current = onExited;
 
@@ -100,7 +115,8 @@ export function ComposerRunner({
     const sprite = spriteRef.current;
     const coinLayer = coinsRef.current;
     const starLayer = starsRef.current;
-    if (!layer || !sprite || !coinLayer || !starLayer) return;
+    const alert = alertRef.current;
+    if (!layer || !sprite || !coinLayer || !starLayer || !alert) return;
 
     let along = 0;
     let facing: 1 | -1 = 1;
@@ -109,10 +125,9 @@ export function ComposerRunner({
     let raf = 0;
     let coinId = 0;
     let nextCoinAt = last + nextCoinDelay(true);
-    let exiting = false;
-    let exitAt = 0;
-    let frozenX = 0;
-    let frozenFacing: 1 | -1 = 1;
+    let phase: RunnerPhase = "running";
+    let phaseAt = last;
+    let grounded = true;
     let finished = false;
     let stunning = false;
     let stunAt = 0;
@@ -208,9 +223,62 @@ export function ComposerRunner({
       hideStars();
     };
 
+    const showAlert = (
+      boxLeft: number,
+      boxTop: number,
+      x: number,
+      y: number,
+    ) => {
+      alert.style.setProperty(
+        "--alert-x",
+        `${Math.round(boxLeft + x - ALERT_SIZE / 2)}px`,
+      );
+      alert.style.setProperty(
+        "--alert-y",
+        `${Math.round(boxTop - RUNNER_SIZE - y + 1 - ALERT_GAP - ALERT_SIZE)}px`,
+      );
+      alert.style.display = "";
+    };
+
+    const hideAlert = () => {
+      alert.style.display = "none";
+    };
+
     const clearCoins = () => {
       for (const coin of coins) coin.el.remove();
       coins.length = 0;
+    };
+
+    const fadeCoins = (now: number) => {
+      for (const coin of [...coins]) {
+        const pop = Math.min(
+          1,
+          (now - (coin.collectedAt ?? now)) / COLLECT_POP_MS,
+        );
+        coin.el.style.opacity = String(1 - pop);
+        if (pop >= 1) {
+          coin.el.remove();
+          coins.splice(coins.indexOf(coin), 1);
+        }
+      }
+    };
+
+    const enter = (next: RunnerPhase, now: number) => {
+      const live = phase === "running" || phase === "waiting";
+      if (phase === "dizzy") endStun();
+      if (next === "running" && !live) {
+        // A new turn cut the reaction short: bonk the chevron afresh.
+        learned = reduced;
+        finished = false;
+      }
+      if (live && next !== "running" && next !== "waiting") {
+        for (const coin of coins) {
+          if (coin.collectedAt == null) coin.collectedAt = now;
+        }
+      }
+      if (next === "dizzy") sprite.classList.add("mascot-stunned");
+      phase = next;
+      phaseAt = now;
     };
 
     const apply = (now: number) => {
@@ -221,6 +289,7 @@ export function ComposerRunner({
       if (!enabledRef.current) {
         showLayer(false);
         endStun();
+        hideAlert();
         if (!busyRef.current && !finished) {
           finished = true;
           clearCoins();
@@ -273,55 +342,61 @@ export function ComposerRunner({
         const prevInset = Math.max(0, prevWidth - RUNNER_INSET * 2);
         along = scaleTrackX(along, prevInset, insetTrack);
         hitAlong = scaleTrackX(hitAlong, prevInset, insetTrack);
-        frozenX = scaleTrackX(frozenX, prevWidth, track.width);
         for (const coin of coins) {
           coin.x = scaleTrackX(coin.x, prevWidth, track.width);
         }
       }
       prevWidth = track.width;
 
-      if (busyRef.current) {
-        if (exiting) {
-          exiting = false;
-          learned = reduced;
-          endStun();
-        }
-        finished = false;
-        if (!reduced && !stunning) {
-          const stepped = stepAlong(along, facing, dt, insetTrack);
-          along = stepped.along;
-          facing = stepped.facing;
-        }
-      } else if (!exiting && !finished) {
-        exiting = true;
-        exitAt = now;
-        endStun();
-        const current = poseAt(along, facing, track.width, null, []);
-        frozenX = current.x;
-        frozenFacing = current.facing;
-        for (const coin of coins) {
-          if (coin.collectedAt == null) coin.collectedAt = now;
-        }
-      }
+      const signal = signalRef.current;
+      const elapsed = now - phaseAt;
+      const next = nextRunnerPhase(phase, {
+        busy: busyRef.current,
+        needsInput: signal.needsInput,
+        outcome: signal.outcome,
+        settled:
+          phase === "running"
+            ? grounded && !stunning
+            : phase === "cheering"
+              ? reduced || hopDone(elapsed)
+              : phase === "dizzy"
+                ? reduced || stunDone(elapsed)
+                : true,
+      });
+      if (next !== phase) enter(next, now);
 
-      if (exiting) {
-        const t = reduced ? 1 : Math.min(1, (now - exitAt) / EXIT_MS);
-        const y = reduced ? -EXIT_SINK : exitJumpY(t);
-        placeSprite(track.left, track.top, frozenX, y, frozenFacing);
-        for (const coin of [...coins]) {
-          const pop = Math.min(1, (now - (coin.collectedAt ?? now)) / COLLECT_POP_MS);
-          coin.el.style.opacity = String(1 - pop);
-          if (pop >= 1) {
-            coin.el.remove();
-            coins.splice(coins.indexOf(coin), 1);
-          }
+      if (phase !== "waiting") hideAlert();
+      if (phase === "cheering" || phase === "dizzy" || phase === "exiting") {
+        fadeCoins(now);
+        const at = now - phaseAt;
+        const x = poseAt(along, facing, track.width, null).x;
+        if (phase === "cheering") {
+          placeSprite(track.left, track.top, x, reduced ? 0 : hopY(at), facing);
+          return;
         }
+        if (phase === "dizzy") {
+          const shake = reduced ? { x: 0, y: 0 } : stunShake(at);
+          placeSprite(track.left, track.top, x, 0, facing, shake.x, shake.y);
+          if (!reduced) {
+            placeStars(track.left, track.top, x, 0, at, shake.x, shake.y);
+          }
+          return;
+        }
+        const t = reduced ? 1 : Math.min(1, at / EXIT_MS);
+        const y = reduced ? -EXIT_SINK : exitJumpY(t);
+        placeSprite(track.left, track.top, x, y, facing);
         if (t >= 1 && !finished) {
           finished = true;
           clearCoins();
           onExitedRef.current();
         }
         return;
+      }
+
+      if (phase === "running" && !reduced && !stunning) {
+        const stepped = stepAlong(along, facing, dt, insetTrack);
+        along = stepped.along;
+        facing = stepped.facing;
       }
 
       const obstacle = cachedObstacle;
@@ -377,8 +452,9 @@ export function ComposerRunner({
         hideStars();
       }
       const hasLive = coins.some((coin) => coin.collectedAt == null);
+      const spawning = phase === "running" && busyRef.current;
 
-      if (!reduced && !stunning && !hasLive && now >= nextCoinAt) {
+      if (spawning && !reduced && !stunning && !hasLive && now >= nextCoinAt) {
         const x = pickCoinX(track.width, pose.x, obstacle);
         if (x != null) {
           const el = document.createElement("div");
@@ -442,6 +518,8 @@ export function ComposerRunner({
         shake.x,
         shake.y,
       );
+      if (phase === "waiting") showAlert(track.left, track.top, pose.x, pose.y);
+      grounded = !pose.airborne;
     };
 
     apply(last);
@@ -485,6 +563,28 @@ export function ComposerRunner({
         />
       </div>
       <div ref={starsRef} className="absolute inset-0" />
+      <div
+        ref={alertRef}
+        className="absolute top-0 left-0 text-amber-400 drop-shadow-[0_1px_0_rgba(0,0,0,0.45)]"
+        style={{
+          display: "none",
+          width: ALERT_SIZE,
+          height: ALERT_SIZE,
+          transform:
+            "translate3d(var(--alert-x, -64px), var(--alert-y, -64px), 0)",
+        }}
+      >
+        <svg
+          viewBox="0 0 8 8"
+          width={ALERT_SIZE}
+          height={ALERT_SIZE}
+          shapeRendering="crispEdges"
+          fill="currentColor"
+          aria-hidden
+        >
+          <path d={ALERT_PATH} />
+        </svg>
+      </div>
     </div>,
     document.body,
   );

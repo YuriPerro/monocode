@@ -11,6 +11,8 @@ import {
   CRASH_STUN_MS,
   EXIT_PEAK,
   EXIT_SINK,
+  HOP_MS,
+  HOP_PEAK,
   JUMP_LEAD,
   RUNNER_INSET,
   RUNNER_SIZE,
@@ -18,8 +20,11 @@ import {
   coinCollected,
   exitJumpY,
   hitsChevron,
+  hopDone,
+  hopY,
   jumpHeight,
   nextCoinDelay,
+  nextRunnerPhase,
   obstacleFromRects,
   pickCoinX,
   pingPong,
@@ -33,9 +38,38 @@ import {
   stunDone,
   stunShake,
   stunStars,
+  runnerSignal,
+  type RunnerCue,
 } from "./composerRunner";
+import {
+  markTurnStopped,
+  newSession,
+  type Block,
+  type Session,
+} from "./session";
 
 const BOX = { left: 100, right: 500, top: 200, bottom: 320, width: 400 };
+
+function chat(blocks: Block[], patch: Partial<Session> = {}): Session {
+  return { ...newSession("cursor", "/tmp/a"), ...patch, blocks };
+}
+
+const user = (id: string): Block => ({ id, role: "user", text: "go" });
+const reply: Block = { id: "a1", role: "assistant", text: "done" };
+const failure: Block = {
+  id: "e1",
+  role: "system",
+  text: "boom",
+  notice: "error",
+};
+
+const cue = (patch: Partial<RunnerCue> = {}): RunnerCue => ({
+  busy: true,
+  needsInput: false,
+  outcome: "none",
+  settled: true,
+  ...patch,
+});
 
 describe("composerRunner", () => {
   it("runs right, then flips and runs back", () => {
@@ -141,6 +175,99 @@ describe("composerRunner", () => {
     expect(spriteClipBottom(8)).toBe(0);
     expect(spriteClipBottom(-4)).toBe(4);
     expect(spriteClipBottom(-40)).toBe(16);
+  });
+
+  it("hops once in place for a turn that ended well", () => {
+    expect(hopY(0)).toBe(0);
+    expect(hopY(HOP_MS / 2)).toBeCloseTo(HOP_PEAK);
+    expect(hopY(HOP_MS)).toBe(0);
+    expect(hopDone(HOP_MS - 1)).toBe(false);
+    expect(hopDone(HOP_MS)).toBe(true);
+  });
+
+  it("reads a pending approval or question as the turn needing input", () => {
+    expect(runnerSignal(chat([user("u1")], { busy: true })).needsInput).toBe(
+      false,
+    );
+    const approval: Block = {
+      id: "p1",
+      role: "approval",
+      text: "run rm",
+      approval: { requestId: 1 },
+    };
+    expect(runnerSignal(chat([user("u1"), approval])).needsInput).toBe(true);
+    expect(
+      runnerSignal(
+        chat([user("u1")], {
+          pendingQuestion: { requestId: 2, questions: [] },
+        }),
+      ).needsInput,
+    ).toBe(true);
+  });
+
+  it("calls a turn failed only when an error notice follows its user block", () => {
+    expect(runnerSignal(chat([user("u1"), reply])).outcome).toBe("done");
+    expect(runnerSignal(chat([user("u1"), reply, failure])).outcome).toBe(
+      "failed",
+    );
+    expect(
+      runnerSignal(chat([user("u1"), failure, user("u2"), reply])).outcome,
+    ).toBe("done");
+    expect(
+      runnerSignal(
+        chat([user("u1"), failure, { ...user("d1"), draft: true }]),
+      ).outcome,
+    ).toBe("failed");
+    expect(runnerSignal(chat([])).outcome).toBe("none");
+  });
+
+  it("gives a turn the user stopped no outcome", () => {
+    const stopped = markTurnStopped(
+      chat([user("u1"), reply, user("u2"), reply]),
+    );
+    expect(stopped.blocks[2].stopped).toBe(true);
+    expect(stopped.blocks[0].stopped).toBeUndefined();
+    expect(runnerSignal(stopped).outcome).toBe("none");
+    expect(markTurnStopped(stopped)).toBe(stopped);
+    expect(
+      runnerSignal(chat([...stopped.blocks, user("u3"), reply])).outcome,
+    ).toBe("done");
+  });
+
+  it("stands still while the turn needs input, after landing", () => {
+    expect(nextRunnerPhase("running", cue())).toBe("running");
+    expect(nextRunnerPhase("running", cue({ needsInput: true }))).toBe(
+      "waiting",
+    );
+    expect(
+      nextRunnerPhase("running", cue({ needsInput: true, settled: false })),
+    ).toBe("running");
+    expect(nextRunnerPhase("waiting", cue({ needsInput: true }))).toBe(
+      "waiting",
+    );
+    expect(nextRunnerPhase("waiting", cue())).toBe("running");
+  });
+
+  it("reacts to how the turn ended, then exits", () => {
+    const ended = (outcome: RunnerCue["outcome"], settled = true) =>
+      cue({ busy: false, outcome, settled });
+    expect(nextRunnerPhase("running", ended("done"))).toBe("cheering");
+    expect(nextRunnerPhase("running", ended("failed"))).toBe("dizzy");
+    expect(nextRunnerPhase("running", ended("none"))).toBe("exiting");
+    expect(nextRunnerPhase("running", ended("done", false))).toBe("running");
+    expect(nextRunnerPhase("waiting", ended("failed", false))).toBe("dizzy");
+
+    expect(nextRunnerPhase("cheering", ended("done", false))).toBe("cheering");
+    expect(nextRunnerPhase("cheering", ended("done"))).toBe("exiting");
+    expect(nextRunnerPhase("dizzy", ended("failed", false))).toBe("dizzy");
+    expect(nextRunnerPhase("dizzy", ended("failed"))).toBe("exiting");
+    expect(nextRunnerPhase("exiting", ended("done"))).toBe("exiting");
+  });
+
+  it("runs again when a new turn starts mid-reaction", () => {
+    for (const phase of ["cheering", "dizzy", "exiting"] as const) {
+      expect(nextRunnerPhase(phase, cue({ settled: false }))).toBe("running");
+    }
   });
 
   it("ignores a control that is not sitting on the top border", () => {
