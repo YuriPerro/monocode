@@ -1,6 +1,7 @@
 import type {
   AgentStepKind,
   Attachment,
+  BackgroundAgent,
   InterjectionMeta,
   RuntimeMode,
   TaskListItem,
@@ -29,6 +30,11 @@ export type HarnessEvent =
    * running and will wake it again. Empty once it is back at work.
    */
   | { type: "background.updated"; tasks: string[] }
+  /**
+   * Every subagent the agent sent to the background that is still running,
+   * yielded or not. Replaces the previous list; empty once none are left.
+   */
+  | { type: "background.agents"; agents: BackgroundAgent[] }
   | ({ type: "interjection"; text: string } & InterjectionMeta)
   | { type: "message.delta"; text: string }
   | { type: "message.completed" }

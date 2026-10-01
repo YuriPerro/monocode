@@ -647,6 +647,12 @@ export type ClaudeAgentTaskProgress = {
   subagentType?: string;
   lastToolName?: string;
   summary?: string;
+  /** Tokens the subagent has used so far. */
+  totalTokens?: number;
+  /** Tool calls the subagent has made so far. */
+  toolUses?: number;
+  /** How long Claude says the subagent has run, in ms. */
+  durationMs?: number;
 };
 
 export function parseTaskProgress(
@@ -667,7 +673,31 @@ export function parseTaskProgress(
     subagentType: stringField(rec, "subagent_type"),
     lastToolName: stringField(rec, "last_tool_name"),
     summary: stringField(rec, "summary"),
+    ...taskUsage(asRecord(rec.usage)),
   };
+}
+
+function taskUsage(
+  usage: Record<string, unknown> | null,
+): Pick<ClaudeAgentTaskProgress, "totalTokens" | "toolUses" | "durationMs"> {
+  const totalTokens = countField(usage, "total_tokens");
+  const toolUses = countField(usage, "tool_uses");
+  const durationMs = countField(usage, "duration_ms");
+  return {
+    ...(totalTokens !== undefined ? { totalTokens } : {}),
+    ...(toolUses !== undefined ? { toolUses } : {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
+  };
+}
+
+function countField(
+  rec: Record<string, unknown> | null,
+  key: string,
+): number | undefined {
+  const value = rec?.[key];
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
 }
 
 export type ClaudeAgentTaskUpdated = {

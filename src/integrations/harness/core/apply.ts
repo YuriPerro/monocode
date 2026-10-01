@@ -149,6 +149,13 @@ export function applyHarnessEvent(
         return rest;
       }
       return { ...session, backgroundTasks: event.tasks };
+    case "background.agents":
+      if (event.agents.length === 0) {
+        if (!session.backgroundAgents) return session;
+        const { backgroundAgents: _cleared, ...rest } = session;
+        return rest;
+      }
+      return { ...session, backgroundAgents: event.agents };
     case "plan":
       return upsertPlan(session, event);
     case "session.error":
@@ -498,8 +505,13 @@ export function appendSteerUser(
 }
 
 export function stopStreaming(session: Session, endedAt = Date.now()): Session {
-  const { backgroundTasks: _cleared, ...settled } =
-    settlePendingApprovals(session);
+  // Claude holds its turn open while background agents run, so a turn that
+  // ended on its own has none left. A cancelled or lost one never says so.
+  const {
+    backgroundTasks: _cleared,
+    backgroundAgents: _clearedAgents,
+    ...settled
+  } = settlePendingApprovals(session);
   return {
     ...settled,
     busy: false,
