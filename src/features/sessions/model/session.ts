@@ -113,6 +113,8 @@ export type HandoffMeta = {
   from: HarnessId;
   to: HarnessId;
   status: HandoffStatus;
+  /** Set when the conversation moved to another account of the same harness. */
+  toAccountId?: string;
   /** Inject this brief into prompts to `to` until that harness accepts a turn. */
   pending?: boolean;
 };

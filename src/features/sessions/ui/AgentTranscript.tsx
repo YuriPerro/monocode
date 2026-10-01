@@ -80,6 +80,10 @@ import {
   type TurnMetrics,
 } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
+import {
+  providerAccountLabel,
+  supportsProviderAccounts,
+} from "../../providers/model/providerAccounts";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useTranscriptLayout } from "../hooks/useTranscriptLayout";
 import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
@@ -3643,7 +3647,14 @@ function HandoffDivider({ block }: { block: Block }) {
   if (!meta) return null;
 
   const preparing = meta.status === "preparing";
-  const label = preparing ? "Preparing a handoff" : HARNESS_TITLE[meta.to];
+  const account =
+    meta.toAccountId && supportsProviderAccounts(meta.to)
+      ? providerAccountLabel(meta.to, meta.toAccountId)
+      : undefined;
+  const target = account
+    ? `${HARNESS_TITLE[meta.to]} (${account})`
+    : HARNESS_TITLE[meta.to];
+  const label = preparing ? "Preparing a handoff" : target;
 
   return (
     <div className="px-4 py-5">
@@ -3653,7 +3664,7 @@ function HandoffDivider({ block }: { block: Block }) {
           role="separator"
           aria-label={
             preparing
-              ? `Preparing a handoff to ${HARNESS_TITLE[meta.to]}`
+              ? `Preparing a handoff to ${target}`
               : `Continued with ${label}`
           }
           className="flex max-w-[min(100%,20rem)] items-center gap-1.5 px-1.5 font-sans text-[12px] text-content/55"
@@ -3666,6 +3677,7 @@ function HandoffDivider({ block }: { block: Block }) {
           ) : (
             <>
               <HarnessIcon harness={meta.to} className="size-3.5 shrink-0" />
+              {account ? <span className="truncate">{account}</span> : null}
             </>
           )}
         </div>

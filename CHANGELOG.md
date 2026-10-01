@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Switching a Claude or Codex conversation to another account continues it through a handoff on the next send instead of opening a new session. The divider names the incoming account, and switching back before sending restores the original thread.
+
 ## [0.6.0] - 2026-09-30
 
 ### Added

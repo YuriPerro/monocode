@@ -2,6 +2,7 @@ import { isEditTool } from "../../../integrations/harness/core/preview";
 import { compactCiRepairContext } from "../../inbox/model/ciRepair";
 import { limitSection } from "../../../shared/lib/jsonText";
 import { displayPath } from "../../../shared/lib/paths";
+import { sameProviderAccountId } from "../../providers/model/providerAccounts";
 import {
   HARNESS_TITLE,
   type Block,
@@ -98,17 +99,79 @@ export function planComposerSwitch(
   }
   return {
     kind: "arm",
-    pending: session.pendingSwitch ?? {
-      from: session.harness,
-      fromModel: session.model,
-      fromSettings: session.modelSettings,
-      ...(session.providerSessionId
-        ? { fromProviderSessionId: session.providerSessionId }
+    pending: session.pendingSwitch ?? switchOrigin(session),
+  };
+}
+
+/**
+ * Provider threads belong to the account that created them, so another
+ * account continues the conversation through the same handoff as a harness
+ * switch.
+ */
+export function planAccountSwitch(
+  session: Session,
+  accountId: string,
+): ComposerSwitchPlan {
+  const pending = session.pendingSwitch;
+  if (
+    pending?.from === session.harness &&
+    sameProviderAccountId(pending.fromProviderAccountId, accountId)
+  ) {
+    return {
+      kind: "revert",
+      ...(pending.fromProviderSessionId
+        ? { restoreProviderSessionId: pending.fromProviderSessionId }
         : {}),
-      ...(session.providerAccountId
-        ? { fromProviderAccountId: session.providerAccountId }
-        : {}),
-    },
+      restoreProviderAccountId: accountId,
+    };
+  }
+  if (!session.blocks.some((block) => block.role === "user") && !pending) {
+    return { kind: "empty", forget: session.harness };
+  }
+  return { kind: "arm", pending: pending ?? switchOrigin(session) };
+}
+
+export function applySwitchPlan(
+  next: Session,
+  plan: ComposerSwitchPlan,
+): Session {
+  if (plan.kind === "arm") return { ...next, pendingSwitch: plan.pending };
+  if (plan.kind === "revert") {
+    return {
+      ...next,
+      pendingSwitch: undefined,
+      providerSessionId: plan.restoreProviderSessionId,
+      providerAccountId: plan.restoreProviderAccountId,
+    };
+  }
+  if (plan.kind === "empty") return { ...next, pendingSwitch: undefined };
+  return next;
+}
+
+/** The switch the next send hands off from, if it changes harness or account. */
+export function armedSwitch(session: Session): PendingHarnessSwitch | null {
+  const pending = session.pendingSwitch;
+  if (!pending) return null;
+  return pending.from !== session.harness ||
+    !sameProviderAccountId(
+      pending.fromProviderAccountId,
+      session.providerAccountId,
+    )
+    ? pending
+    : null;
+}
+
+function switchOrigin(session: Session): PendingHarnessSwitch {
+  return {
+    from: session.harness,
+    fromModel: session.model,
+    fromSettings: session.modelSettings,
+    ...(session.providerSessionId
+      ? { fromProviderSessionId: session.providerSessionId }
+      : {}),
+    ...(session.providerAccountId
+      ? { fromProviderAccountId: session.providerAccountId }
+      : {}),
   };
 }
 
@@ -159,10 +222,12 @@ export function appendPreparingHandoff(
   session: Session,
   from: HarnessId,
   to: HarnessId,
+  toAccountId?: string,
 ): Session {
   return appendHandoffBlock(session, {
     from,
     to,
+    ...(toAccountId ? { toAccountId } : {}),
     status: "preparing",
     text: "",
     pending: false,
@@ -422,6 +487,7 @@ function appendHandoffBlock(
         handoff: {
           from: input.from,
           to: input.to,
+          ...(input.toAccountId ? { toAccountId: input.toAccountId } : {}),
           status: input.status,
           ...(input.pending ? { pending: true } : {}),
         },

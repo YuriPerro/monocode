@@ -1186,6 +1186,9 @@ function sanitizeHandoff(value: Block["handoff"]): HandoffMeta | undefined {
   return {
     from: value.from,
     to: value.to,
+    ...(typeof value.toAccountId === "string" && value.toAccountId
+      ? { toAccountId: value.toAccountId }
+      : {}),
     status: "ready",
     pending: interrupted || !!value.pending,
   };
