@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   appendPreparingHandoff,
   appendReadyHandoff,
+  applySwitchPlan,
+  armedSwitch,
   buildDeterministicHandoff,
   buildHandoffComposerCard,
   buildOutgoingHandoffPrompt,
@@ -11,6 +13,7 @@ import {
   handoffTurnCard,
   hasSessionEdits,
   pendingHandoff,
+  planAccountSwitch,
   planComposerSwitch,
   sessionChildHarnesses,
   sessionThroughTurn,
@@ -85,6 +88,107 @@ describe("planComposerSwitch", () => {
     expect(planComposerSwitch(session, "cursor")).toEqual({
       kind: "revert",
       restoreProviderSessionId: "acp-1",
+    });
+  });
+});
+
+describe("planAccountSwitch", () => {
+  const started = () =>
+    sessionWith([{ id: "u1", role: "user", text: "hey" }], {
+      harness: "claude",
+      providerSessionId: "claude-1",
+      providerAccountId: "account-home",
+    });
+
+  it("only rebinds the account on an empty session", () => {
+    expect(
+      planAccountSwitch(newSession("claude", "/tmp"), "account-work"),
+    ).toEqual({ kind: "empty", forget: "claude" });
+  });
+
+  it("arms a handoff from the current account and thread", () => {
+    const session = started();
+    const plan = planAccountSwitch(session, "account-work");
+    expect(plan).toEqual({
+      kind: "arm",
+      pending: {
+        from: "claude",
+        fromModel: session.model,
+        fromSettings: session.modelSettings,
+        fromProviderSessionId: "claude-1",
+        fromProviderAccountId: "account-home",
+      },
+    });
+    const next = applySwitchPlan(
+      {
+        ...session,
+        providerAccountId: "account-work",
+        providerSessionId: undefined,
+      },
+      plan,
+    );
+    expect(armedSwitch(next)).toMatchObject({
+      from: "claude",
+      fromProviderAccountId: "account-home",
+    });
+  });
+
+  it("restores the original thread when switching back before send", () => {
+    const session = started();
+    const armed = applySwitchPlan(
+      {
+        ...session,
+        providerAccountId: "account-work",
+        providerSessionId: undefined,
+      },
+      planAccountSwitch(session, "account-work"),
+    );
+    const plan = planAccountSwitch(armed, "account-home");
+    expect(plan).toEqual({
+      kind: "revert",
+      restoreProviderSessionId: "claude-1",
+      restoreProviderAccountId: "account-home",
+    });
+    const reverted = applySwitchPlan(
+      { ...armed, providerAccountId: "account-home" },
+      plan,
+    );
+    expect(reverted).toMatchObject({
+      providerSessionId: "claude-1",
+      providerAccountId: "account-home",
+    });
+    expect(armedSwitch(reverted)).toBeNull();
+  });
+
+  it("treats a missing account id as the default account", () => {
+    const session = sessionWith([{ id: "u1", role: "user", text: "hey" }], {
+      harness: "claude",
+      providerAccountId: "default",
+      pendingSwitch: {
+        from: "claude",
+        fromModel: "claude:opus",
+        fromSettings: {},
+      },
+    });
+    expect(armedSwitch(session)).toBeNull();
+    expect(planAccountSwitch(session, "default")).toMatchObject({
+      kind: "revert",
+    });
+  });
+
+  it("keeps a pending harness switch when only the account changes", () => {
+    const session = sessionWith([{ id: "u1", role: "user", text: "hey" }], {
+      harness: "claude",
+      pendingSwitch: {
+        from: "cursor",
+        fromModel: "cursor:composer-2",
+        fromSettings: {},
+        fromProviderSessionId: "acp-1",
+      },
+    });
+    expect(planAccountSwitch(session, "account-work")).toMatchObject({
+      kind: "arm",
+      pending: { from: "cursor", fromProviderSessionId: "acp-1" },
     });
   });
 });

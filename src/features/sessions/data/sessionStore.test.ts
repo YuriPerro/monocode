@@ -569,6 +569,32 @@ describe("sanitizeSessionForPersist", () => {
     });
   });
 
+  it("keeps the target account of an account handoff", () => {
+    const session = newSession("claude", "/tmp/project");
+    session.blocks = [
+      { id: "u1", role: "user", text: "hey" },
+      {
+        id: "h1",
+        role: "handoff",
+        text: "recap",
+        handoff: {
+          from: "claude",
+          to: "claude",
+          toAccountId: "account-work",
+          status: "ready",
+        },
+      },
+    ];
+    const persisted = sanitizeSessionForPersist(session);
+    expect(persisted.blocks[1].handoff).toEqual({
+      from: "claude",
+      to: "claude",
+      toAccountId: "account-work",
+      status: "ready",
+      pending: false,
+    });
+  });
+
   it("keeps valid interjection chrome only on system blocks", () => {
     const session = newSession("pi", "/tmp/project");
     session.blocks = [

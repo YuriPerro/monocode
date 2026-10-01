@@ -278,6 +278,8 @@ import {
 import { supportsHarnessLogin } from "../integrations/harness/core/authSupport";
 import {
   appendPreparingHandoff,
+  applySwitchPlan,
+  armedSwitch,
   buildDeterministicHandoff,
   buildHandoffComposerCard,
   chooseHandoffBrief,
@@ -287,6 +289,7 @@ import {
   handoffTurnCard,
   isPreparingHandoff,
   pendingHandoff,
+  planAccountSwitch,
   planComposerSwitch,
   sessionChildHarnesses,
   sessionThroughTurn,
@@ -837,26 +840,7 @@ function withPlanBuildTarget(
     resolved.id,
     modelSettings,
   );
-
-  if (plan.kind === "arm") {
-    return { ...next, pendingSwitch: plan.pending };
-  }
-  if (plan.kind === "revert") {
-    return {
-      ...next,
-      pendingSwitch: undefined,
-      ...(plan.restoreProviderSessionId
-        ? { providerSessionId: plan.restoreProviderSessionId }
-        : { providerSessionId: undefined }),
-      ...(plan.restoreProviderAccountId
-        ? { providerAccountId: plan.restoreProviderAccountId }
-        : { providerAccountId: undefined }),
-    };
-  }
-  if (plan.kind === "empty") {
-    return { ...next, pendingSwitch: undefined };
-  }
-  return next;
+  return applySwitchPlan(next, plan);
 }
 
 function openSessionIds(tabs: WorkspaceTab[]): Set<string> {
@@ -2264,38 +2248,29 @@ function Workspace({
     (provider: ProviderAccountProvider, accountId: string) => {
       if (!active || active.harness !== provider) return;
       const currentId = active.providerAccountId ?? DEFAULT_PROVIDER_ACCOUNT_ID;
-      if (currentId === accountId) return;
+      if (currentId === accountId || isPreparingHandoff(active)) return;
 
-      if (active.blocks.length === 0 && !active.busy) {
-        setSessions((current) =>
-          current.map((session) =>
-            session.id === active.id
-              ? { ...session, providerAccountId: accountId }
-              : session,
-          ),
-        );
-        return;
+      const plan = planAccountSwitch(active, accountId);
+      if (plan.kind === "empty") {
+        void forgetHarnessSession(plan.forget, active.id);
       }
-
-      // Provider thread ids are account-owned. Keep the current conversation
-      // pinned to its account and open a clean one for the selected profile.
-      const session = {
-        ...newSession(
-          active.harness,
-          active.cwd,
-          active.model,
-          active.runtimeMode,
-          active.modelSettings,
+      setSessions((current) =>
+        current.map((session) =>
+          session.id === active.id
+            ? applySwitchPlan(
+                {
+                  ...session,
+                  providerAccountId: accountId,
+                  providerSessionId: undefined,
+                },
+                plan,
+              )
+            : session,
         ),
-        providerAccountId: accountId,
-      };
-      const tab = newTab(session.id);
-      setSessions((current) => [...current, session]);
-      appendTab(tab, active.cwd);
-      setActiveTabId(tab.id);
+      );
       setComposerFocused(true);
     },
-    [active, appendTab],
+    [active],
   );
 
   const onOpenWhatsNew = useCallback((version: string) => {
@@ -5773,31 +5748,10 @@ function Workspace({
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          const next = withHarnessChoice(
-            s,
-            harness,
-            resolved.id,
-            modelSettings,
+          return applySwitchPlan(
+            withHarnessChoice(s, harness, resolved.id, modelSettings),
+            plan,
           );
-          if (plan.kind === "arm") {
-            return { ...next, pendingSwitch: plan.pending };
-          }
-          if (plan.kind === "revert") {
-            return {
-              ...next,
-              pendingSwitch: undefined,
-              ...(plan.restoreProviderSessionId
-                ? { providerSessionId: plan.restoreProviderSessionId }
-                : { providerSessionId: undefined }),
-              ...(plan.restoreProviderAccountId
-                ? { providerAccountId: plan.restoreProviderAccountId }
-                : { providerAccountId: undefined }),
-            };
-          }
-          if (plan.kind === "empty") {
-            return { ...next, pendingSwitch: undefined };
-          }
-          return next;
         }),
       );
     },
@@ -6105,7 +6059,7 @@ function Workspace({
         enqueueHarnessEvent(sessionId, {
           type: "session.error",
           message:
-            "This conversation uses a removed provider account. Switch accounts from the usage control to start a new conversation.",
+            "This conversation uses a removed provider account. Switch accounts from the usage control to continue it there.",
         });
         flushHarnessEvents();
         return false;
@@ -6149,10 +6103,7 @@ function Workspace({
         options?.ciRepair?.prompt ??
         (rawCommand ? submittedText : composeNoteMessage(noteCard, promptText));
 
-      const pendingSwitch =
-        current.pendingSwitch && current.pendingSwitch.from !== current.harness
-          ? current.pendingSwitch
-          : null;
+      const pendingSwitch = armedSwitch(current);
 
       if (current.busy && !pendingSwitch) {
         if (
@@ -6489,6 +6440,9 @@ function Workspace({
                   sealed,
                   pendingSwitch.from,
                   next.harness,
+                  pendingSwitch.from === next.harness
+                    ? providerAccountId
+                    : undefined,
                 ),
                 visibleText,
                 visible,
