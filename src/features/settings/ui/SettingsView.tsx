@@ -293,6 +293,7 @@ import {
   loadFileTabMode,
   loadFollowUpBehavior,
   loadFormatOnSave,
+  loadOperatorByDefault,
   loadGridArcadeEnabled,
   loadLiveAgentsEnabled,
   loadModelControls,
@@ -309,6 +310,7 @@ import {
   saveFileTabMode,
   saveFollowUpBehavior,
   saveFormatOnSave,
+  saveOperatorByDefault,
   saveGridArcadeEnabled,
   saveLiveAgentsEnabled,
   saveModelControls,
@@ -938,6 +940,9 @@ function ChatPage() {
     useState<ModelControls>(loadModelControls);
   const [diffViewer, setDiffViewer] = useState<DiffViewer>(loadDiffViewer);
   const [formatOnSave, setFormatOnSave] = useState(loadFormatOnSave);
+  const [operatorByDefault, setOperatorByDefault] = useState(
+    loadOperatorByDefault,
+  );
   const [composerRunner, setComposerRunner] = useState(loadComposerRunner);
   const [gridArcadeEnabled, setGridArcadeEnabled] = useState(
     loadGridArcadeEnabled,
@@ -976,6 +981,11 @@ function ChatPage() {
   const onDiffViewer = (next: DiffViewer) => {
     saveDiffViewer(next);
     setDiffViewer(next);
+  };
+
+  const onOperatorByDefault = (next: boolean) => {
+    saveOperatorByDefault(next);
+    setOperatorByDefault(next);
   };
 
   const onFormatOnSave = (next: boolean) => {
@@ -1059,6 +1069,17 @@ function ChatPage() {
               { value: "beside", label: "Beside" },
             ]}
             onChange={onModelControls}
+          />
+        </Row>
+        <Row
+          id="operator-by-default"
+          label="Operator by default"
+          description="New conversations get MonoCode app access from their first turn, as if they started with /operator: they can read and message other sessions in the project, start sessions and use notes. Turn this off to require /operator in each conversation."
+        >
+          <Toggle
+            label="Operator by default"
+            on={operatorByDefault}
+            onChange={onOperatorByDefault}
           />
         </Row>
       </Group>

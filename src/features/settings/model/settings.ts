@@ -345,6 +345,13 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "effort thinking reasoning fast service tier model picker composer",
   },
   {
+    id: "operator-by-default",
+    section: "chat",
+    label: "Operator by default",
+    keywords:
+      "operator app access cli sessions agents orchestrate message other sessions",
+  },
+  {
     id: "composer-mascot",
     section: "chat",
     label: "Composer mascot",
@@ -932,6 +939,19 @@ export function subscribeAutosave(onStoreChange: () => void) {
     window.removeEventListener(AUTOSAVE_CHANGE_EVENT, onStoreChange);
     window.removeEventListener("storage", onStorage);
   };
+}
+
+const OPERATOR_BY_DEFAULT_KEY = "monocode.operatorByDefault";
+
+export const OPERATOR_BY_DEFAULT_DEFAULT = false;
+
+/** New threads get MonoCode app access without typing /operator. */
+export function loadOperatorByDefault(): boolean {
+  return readFlag(OPERATOR_BY_DEFAULT_KEY) ?? OPERATOR_BY_DEFAULT_DEFAULT;
+}
+
+export function saveOperatorByDefault(value: boolean) {
+  writeFlag(OPERATOR_BY_DEFAULT_KEY, value);
 }
 
 const CLAUDE_HOOKS_KEY = "monocode.claudeHooks";
