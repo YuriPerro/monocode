@@ -151,6 +151,10 @@ describe("project rail visibility", () => {
       onSelectProject: vi.fn(),
       onOpenProject: vi.fn(),
     };
+    // Reduced motion skips the slide, so collapsing hides the rail at once.
+    vi.spyOn(window, "matchMedia").mockReturnValue({
+      matches: true,
+    } as MediaQueryList);
     await act(async () => render());
     const rail = container.querySelector<HTMLElement>('nav[aria-label="Projects"]');
     expect(rail).not.toBeNull();
@@ -158,7 +162,7 @@ describe("project rail visibility", () => {
 
     props = { ...props, projectRailOpen: false };
     await act(async () => render());
-    expect(rail?.classList.contains("hidden")).toBe(true);
+    expect(rail?.parentElement?.classList.contains("hidden")).toBe(true);
 
     props = { ...props, projectRailOpen: true };
     await act(async () => render());

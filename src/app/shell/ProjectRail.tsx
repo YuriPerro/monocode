@@ -91,6 +91,7 @@ import { remoteProjectFor } from "../../features/connections/model/remoteProject
 import { useProjectMenu } from "./useProjectMenu";
 
 type Props = {
+  /** False while collapsed or sliding shut; the parent's frame hides it. */
   visible?: boolean;
   cwd: string;
   recents: RecentProject[];
@@ -333,7 +334,7 @@ export function ProjectRail({
     <nav
       ref={resize.setPaneRef}
       aria-label="Projects"
-      className={`sidebar-glass relative shrink-0 flex-col border-r border-stroke ${visible ? "flex" : "hidden"}`}
+      className="sidebar-glass relative flex shrink-0 flex-col border-r border-stroke"
     >
       <div
         className="flex h-10 shrink-0 select-none items-center pr-1.5"

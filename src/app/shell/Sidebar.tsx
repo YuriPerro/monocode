@@ -31,7 +31,6 @@ import {
   memo,
   useEffect,
   useId,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -157,6 +156,7 @@ import { ProjectSearch } from "../../features/projects/ui/ProjectSearch";
 import { Popover } from "../../shared/ui/Popover";
 import { SearchableProjectPicker } from "../../features/projects/ui/SearchableProjectPicker";
 import { useProjectMenu } from "./useProjectMenu";
+import { useWidthReveal } from "./useWidthReveal";
 import { SessionFiltersMenu } from "../../features/sessions/ui/SessionFiltersMenu";
 import { LinkSessionWorkItemDialog } from "../../features/sessions/ui/LinkSessionWorkItemDialog";
 import { sessionReminderPresets } from "../../features/sessions/ui/sessionReminderPresets";
@@ -731,6 +731,12 @@ function SidebarComponent({
   // recreate every project row and restart their Git-stat subscriptions.
   const railMounted = useRef(railVisible);
   if (railVisible) railMounted.current = true;
+  // The rail slides on its own toggle. Settings borrowing its slot, or the
+  // compact rail standing in for it, show and hide it at once.
+  const railReveal = useWidthReveal({
+    shown: railVisible,
+    slide: showProjectRail && !settingsOpen && !compactProjectRail,
+  });
   const compactRailVisible =
     compactProjectRail && showProjectRail && !railVisible;
   const inProject = looksLikeProject(cwd);
@@ -749,15 +755,20 @@ function SidebarComponent({
   // open the sidebar temporarily until the user clicks away.
   const drawerMode = compactRailVisible && !open;
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const drawerRef = useRef<HTMLDivElement>(null);
   const drawerVisible = drawerMode && drawerOpen && sidebarAvailable;
   // A dismissed drawer stays mounted while it slides shut. Anything that takes
-  // its place (the pinned sidebar, another view) drops it at once.
-  const [drawerMounted, setDrawerMounted] = useState(false);
-  const drawerClosing =
-    drawerMounted && !drawerVisible && drawerMode && sidebarAvailable;
-  const drawerRendered = drawerVisible || drawerClosing;
-  const drawerAnimation = useRef<Animation | null>(null);
+  // its place (the pinned sidebar, another view) drops it at once, as does a
+  // toggle in the middle of a resize drag.
+  const drawerReveal = useWidthReveal({
+    shown: drawerVisible,
+    slide: drawerMode && sidebarAvailable && !resize.dragging,
+  });
+  // The pinned sidebar slides on its own toggle the same way. Handing the slot
+  // to or from the drawer, or to another view, happens at once.
+  const sidebarReveal = useWidthReveal({
+    shown: sidebarVisible,
+    slide: sidebarAvailable && !drawerReveal.rendered && !resize.dragging,
+  });
   const panelOpen = open || drawerVisible;
   const gitStatuses = useGitFileStatuses(gitRoot, panelOpen && tab === "files");
   const changeStats = useProjectDiffStats(gitRoot, panelOpen);
@@ -765,55 +776,6 @@ function SidebarComponent({
   useEffect(() => {
     if (!drawerMode || !sidebarAvailable) setDrawerOpen(false);
   }, [drawerMode, sidebarAvailable]);
-
-  useEffect(() => {
-    if (drawerVisible) setDrawerMounted(true);
-    else if (!drawerClosing) setDrawerMounted(false);
-  }, [drawerVisible, drawerClosing]);
-
-  // Grow the drawer's width so the workspace is pushed along with it. A
-  // reversal mid-slide starts from wherever the width currently is.
-  useLayoutEffect(() => {
-    const drawer = drawerRef.current;
-    if (!drawerRendered || !drawer) {
-      drawerAnimation.current = null;
-      return;
-    }
-    const full =
-      drawer.firstElementChild instanceof HTMLElement
-        ? drawer.firstElementChild.offsetWidth
-        : 0;
-    const from = drawerAnimation.current
-      ? drawer.getBoundingClientRect().width
-      : drawerClosing
-        ? full
-        : 0;
-    drawerAnimation.current?.cancel();
-    drawerAnimation.current = null;
-    const reduceMotion = window.matchMedia?.(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    if (typeof drawer.animate !== "function" || reduceMotion) {
-      if (drawerClosing) setDrawerMounted(false);
-      return;
-    }
-    const animation = drawer.animate(
-      [{ width: `${from}px` }, { width: `${drawerClosing ? 0 : full}px` }],
-      drawerClosing
-        ? {
-            duration: 160,
-            easing: "cubic-bezier(0.4, 0, 1, 1)",
-            fill: "forwards",
-          }
-        : { duration: 200, easing: "cubic-bezier(0.22, 1, 0.36, 1)" },
-    );
-    drawerAnimation.current = animation;
-    animation.onfinish = () => {
-      if (drawerAnimation.current !== animation) return;
-      drawerAnimation.current = null;
-      if (drawerClosing) setDrawerMounted(false);
-    };
-  }, [drawerRendered, drawerClosing]);
 
   useEffect(() => {
     if (!drawerVisible) return;
@@ -826,7 +788,7 @@ function SidebarComponent({
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target;
       const el = target instanceof Element ? target : null;
-      if (drawerRef.current?.contains(el)) return;
+      if (drawerReveal.frame.ref.current?.contains(el)) return;
       if (el?.closest("[data-compact-project-rail],[data-popover-side]")) {
         return;
       }
@@ -2119,7 +2081,9 @@ function SidebarComponent({
   return (
     <div
       className={`flex h-full shrink-0 ${
-        railVisible || compactRailVisible || sidebarVisible ? "" : "hidden"
+        railReveal.rendered || compactRailVisible || sidebarReveal.rendered
+          ? ""
+          : "hidden"
       }`}
     >
       {compactRailVisible ? (
@@ -2153,53 +2117,52 @@ function SidebarComponent({
         />
       ) : null}
       {railMounted.current && onSelectProject && onOpenProject ? (
-        <ProjectRail
-          visible={railVisible}
-          cwd={cwd}
-          recents={recents}
-          inboxUnseen={inboxUnseen}
-          busyPaths={busyProjectPaths}
-          liveAgents={liveAgents}
-          activeSessionId={activeSessionId}
-          onSelectAgent={onSelectAgent}
-          canGoBack={canGoBack}
-          canGoForward={canGoForward}
-          onGoBack={onGoBack}
-          onGoForward={onGoForward}
-          onSearch={onSearch}
-          searchActive={searchActive}
-          onOpenInbox={onOpenInbox}
-          inboxActive={inboxActive}
-          notesEnabled={notesEnabled}
-          onOpenNotes={onOpenNotes}
-          notesActive={notesActive}
-          onOpenAutomations={onOpenAutomations}
-          automationsActive={automationsActive}
-          onTogglePanel={onToggleProjectRail}
-          onSelectProject={onSelectProject}
-          onOpenProject={onOpenProject}
-          onRemoveProject={onRemoveProject}
-          settingsOpen={settingsOpen}
-          settingsSection={settingsSection}
-          onOpenSettings={onOpenSettings}
-          onOpenNotificationSettings={onOpenNotificationSettings}
-          onSelectSettingsSection={onSelectSettingsSection}
-          onCloseSettings={onCloseSettings}
-          updateNotice={updateNotice}
-          onOpenWhatsNew={onOpenWhatsNew}
-          onDismissUpdate={onDismissUpdate}
-        />
+        <div {...railReveal.frame}>
+          <ProjectRail
+            visible={railVisible}
+            cwd={cwd}
+            recents={recents}
+            inboxUnseen={inboxUnseen}
+            busyPaths={busyProjectPaths}
+            liveAgents={liveAgents}
+            activeSessionId={activeSessionId}
+            onSelectAgent={onSelectAgent}
+            canGoBack={canGoBack}
+            canGoForward={canGoForward}
+            onGoBack={onGoBack}
+            onGoForward={onGoForward}
+            onSearch={onSearch}
+            searchActive={searchActive}
+            onOpenInbox={onOpenInbox}
+            inboxActive={inboxActive}
+            notesEnabled={notesEnabled}
+            onOpenNotes={onOpenNotes}
+            notesActive={notesActive}
+            onOpenAutomations={onOpenAutomations}
+            automationsActive={automationsActive}
+            onTogglePanel={onToggleProjectRail}
+            onSelectProject={onSelectProject}
+            onOpenProject={onOpenProject}
+            onRemoveProject={onRemoveProject}
+            settingsOpen={settingsOpen}
+            settingsSection={settingsSection}
+            onOpenSettings={onOpenSettings}
+            onOpenNotificationSettings={onOpenNotificationSettings}
+            onSelectSettingsSection={onSelectSettingsSection}
+            onCloseSettings={onCloseSettings}
+            updateNotice={updateNotice}
+            onOpenWhatsNew={onOpenWhatsNew}
+            onDismissUpdate={onDismissUpdate}
+          />
+        </div>
       ) : null}
-      {sidebarVisible ? sidebarContent : null}
-      {drawerRendered ? (
-        // Pinned to the right edge, so the sidebar slides in as the width grows.
+      {sidebarReveal.rendered ? (
+        <div {...sidebarReveal.frame}>{sidebarContent}</div>
+      ) : null}
+      {drawerReveal.rendered ? (
         <div
-          ref={drawerRef}
-          data-sidebar-drawer={drawerClosing ? "closing" : "open"}
-          inert={drawerClosing || undefined}
-          className={`flex shrink-0 justify-end overflow-hidden ${
-            drawerClosing ? "pointer-events-none" : ""
-          }`}
+          {...drawerReveal.frame}
+          data-sidebar-drawer={drawerReveal.closing ? "closing" : "open"}
         >
           {sidebarContent}
         </div>
