@@ -10,6 +10,7 @@ import {
   newAgentProfile,
   removeAgentProfile,
   saveAgentProfile,
+  withCurrentProfile,
   type AgentProfile,
 } from "./profiles";
 import {
@@ -104,6 +105,30 @@ describe("agent profiles", () => {
       profile: undefined,
       profileInstructions: undefined,
     });
+  });
+
+  it("follows profile edits until the first turn, then keeps its snapshot", () => {
+    const saved = saveAgentProfile(profile({ instructions: "" }));
+    const chosen = {
+      ...applyAgentProfile(newSession("claude", "/tmp/project"), saved),
+      model: "codex:other",
+    };
+    expect(chosen.profileInstructions).toBeUndefined();
+    saveAgentProfile({
+      ...saved,
+      name: "Architect",
+      instructions: "Be terse.",
+    });
+    expect(withCurrentProfile(chosen)).toMatchObject({
+      model: "codex:other",
+      profile: { name: "Architect" },
+      profileInstructions: "Be terse.",
+    });
+    const started = {
+      ...chosen,
+      blocks: [{ id: "u", role: "user" as const, text: "hello" }],
+    };
+    expect(withCurrentProfile(started)).toBe(started);
   });
 
   it("restores only a valid session profile snapshot", () => {

@@ -15,7 +15,6 @@ import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
 import { resolveModel } from "../../sessions/model/models";
 import type { SessionProfile } from "../../sessions/model/session";
 import type { AgentProfile } from "../model/profiles";
-import { ProfileChip } from "./ProfileChip";
 import { profileColorStyle, ProfileGlyph } from "./ProfileGlyph";
 
 const MENU_WIDTH = 300;
@@ -65,7 +64,17 @@ export function ProfilePicker({
     if (open) setActive(selectedIndex);
   }, [open, selectedIndex]);
 
-  if (locked) return value ? <ProfileChip profile={value} /> : null;
+  if (locked)
+    return value ? (
+      <span
+        title={`Started as ${value.name}`}
+        style={profileColorStyle(value)}
+        className="profile-chip flex h-6.5 max-w-40 items-center gap-1 rounded-md px-1.5 font-medium"
+      >
+        <ProfileGlyph profile={value} tinted={false} />
+        <span className="min-w-0 truncate text-[11px]">{value.name}</span>
+      </span>
+    ) : null;
   if (!value && profiles.length === 0) return null;
 
   const dismiss = (restore: boolean) => {

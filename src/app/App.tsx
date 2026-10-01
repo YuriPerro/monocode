@@ -9,6 +9,7 @@ import {
   agentProfile,
   applyAgentProfile,
   clearAgentProfile,
+  withCurrentProfile,
 } from "../features/profiles/model/profiles";
 import {
   beforeFirstUserTurn,
@@ -6016,6 +6017,20 @@ function Workspace({
       let current = options?.buildTarget
         ? withPlanBuildTarget(draftCleared, options.buildTarget)
         : draftCleared;
+      const profiled = withCurrentProfile(current);
+      if (profiled !== current) {
+        current = profiled;
+        const refresh = (session: Session) =>
+          session.id === sessionId
+            ? {
+                ...session,
+                profile: profiled.profile,
+                profileInstructions: profiled.profileInstructions,
+              }
+            : session;
+        sessionsRef.current = sessionsRef.current.map(refresh);
+        setSessions((prev) => prev.map(refresh));
+      }
       const editedResend = options?.resendEdited
         ? createEditedResendAttempt(current, options.onResendRejected)
         : undefined;

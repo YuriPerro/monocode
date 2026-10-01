@@ -86,6 +86,8 @@ type Shared = {
   onWorktreeBaseChange: (sessionId: string, base: string) => void;
   onManageWorktrees?: () => void;
   onModelChange: (sessionId: string, harness: HarnessId, model: string) => void;
+  onProfileChange?: (sessionId: string, profileId: string | null) => void;
+  onManageProfiles?: () => void;
   onModelSettingsChange: (
     sessionId: string,
     settings: Record<string, string>,
@@ -228,6 +230,8 @@ function PaneTreeComponent({
   onWorktreeBaseChange,
   onManageWorktrees,
   onModelChange,
+  onProfileChange,
+  onManageProfiles,
   onModelSettingsChange,
   onRuntimeModeChange,
   onSaveDraft,
@@ -484,6 +488,8 @@ function PaneTreeComponent({
                 onWorktreeBaseChange={onWorktreeBaseChange}
                 onManageWorktrees={onManageWorktrees}
                 onModelChange={onModelChange}
+                onProfileChange={onProfileChange}
+                onManageProfiles={onManageProfiles}
                 onModelSettingsChange={onModelSettingsChange}
                 onRuntimeModeChange={onRuntimeModeChange}
                 onSaveDraft={onSaveDraft}

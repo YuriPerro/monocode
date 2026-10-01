@@ -1,4 +1,5 @@
 import { mergeModelSettings, resolveModel } from "../../sessions/model/models";
+import { beforeFirstUserTurn } from "./profileInstructions";
 import {
   cleanColor,
   cleanIcon,
@@ -166,6 +167,23 @@ export function applyAgentProfile<T extends Session>(
     profileInstructions: undefined,
     ...profileLaunch(profile),
   };
+}
+
+/**
+ * Until the first turn starts, a session follows edits to its profile's name,
+ * look and instructions. The model and access stay as chosen in the composer.
+ */
+export function withCurrentProfile<T extends Session>(session: T): T {
+  if (!session.profile || !beforeFirstUserTurn(session)) return session;
+  const latest = agentProfile(session.profile.id);
+  if (!latest) return session;
+  const launch = profileLaunch(latest);
+  if (
+    JSON.stringify(launch.profile) === JSON.stringify(session.profile) &&
+    launch.profileInstructions === session.profileInstructions
+  )
+    return session;
+  return { ...session, profileInstructions: undefined, ...launch };
 }
 
 /** Drop a profile before the first turn, keeping the chosen model. */
