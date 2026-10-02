@@ -317,6 +317,7 @@ import {
   beginSessionTurn,
   applySessionCheckpoint,
   captureSessionCheckpoint,
+  ensureSessionCheckpoint,
   forgetSessionCheckpoint,
   flushSessionCheckpoint,
   keepSessionChanges,
@@ -6727,7 +6728,10 @@ function Workspace({
             revealHandoff(wrap.text);
           }
           nudgeOpenEditors(event, workCwd);
-          if (!orchestrator.forSession(sessionId))
+          if (
+            !orchestrator.forSession(sessionId) ||
+            orchestrator.isolatedWorker(sessionId)
+          )
             trackSessionEdits(sessionId, workCwd, event);
           const routed = routePlanEvent(event);
           if (routed) enqueueHarnessEvent(sessionId, routed);
@@ -6767,6 +6771,10 @@ function Workspace({
 
         if (!current.inboxAsk && !orchestrator.forSession(sessionId)) {
           await beginSessionTurn(sessionId, workCwd).catch(() => undefined);
+        } else if (orchestrator.isolatedWorker(sessionId)) {
+          await ensureSessionCheckpoint(sessionId, workCwd).catch(
+            () => undefined,
+          );
         }
         if (turnGen.current.get(sessionId) !== gen) return;
         let buildSucceeded = false;

@@ -311,6 +311,14 @@ export class Orchestrator {
         run.leadId === id || run.tasks.some((task) => task.sessionId === id),
     );
   }
+  /** Worker whose edits land in its own worktree and integrate through review. */
+  isolatedWorker(id: string) {
+    return this.runs.some((run) =>
+      run.tasks.some(
+        (task) => task.sessionId === id && task.workspacePolicy !== "shared",
+      ),
+    );
+  }
   resumeBlocker(leadId: string, checkoutCwd?: string): Session | undefined {
     const lead = this.host?.session(leadId);
     if (!lead) return undefined;
