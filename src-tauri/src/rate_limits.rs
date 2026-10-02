@@ -1,4 +1,5 @@
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
@@ -473,48 +474,34 @@ fn usage_error(status: u16) -> ClaudeUsageFetch {
     usage_result("error", Some(status), None, Some(message))
 }
 
-fn read_claude_credentials(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
-    if config_dir.is_some() {
-        return read_profile_credentials(config_dir);
-    }
-    // The default account is whatever `claude` resolves to. Wrappers and
-    // shells often export CLAUDE_CONFIG_DIR=~/.claude, which stores the same
-    // profile under a suffixed Keychain item, so read both and keep the one
-    // that was refreshed last.
-    let home_profile = dirs_home().map(|home| PathBuf::from(home).join(".claude"));
-    freshest(
-        read_profile_credentials(None).into_iter().chain(
-            home_profile
-                .as_deref()
-                .and_then(|dir| read_profile_credentials(Some(dir))),
-        ),
-    )
+/// The `CLAUDE_SECURESTORAGE_CONFIG_DIR` value a Claude profile launches with,
+/// and the selector usage reads its credentials by. Claude treats an empty
+/// value as its default, unsuffixed store even when `CLAUDE_CONFIG_DIR` is set.
+pub(crate) fn claude_credential_selector(config_dir: Option<&Path>) -> &OsStr {
+    config_dir.map_or(OsStr::new(""), Path::as_os_str)
 }
 
-fn freshest(credentials: impl Iterator<Item = ClaudeCredentials>) -> Option<ClaudeCredentials> {
-    credentials.max_by_key(|creds| creds.expires_at_ms.unwrap_or(i64::MIN))
-}
-
-fn read_profile_credentials(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
+fn read_claude_credentials(config_dir: Option<&Path>) -> Option<ClaudeCredentials> {
+    let selector = claude_credential_selector(config_dir);
     #[cfg(target_os = "macos")]
     {
-        let service = claude_keychain_service(config_dir);
+        let service = claude_keychain_service(selector);
         if let Some(creds) = read_macos_keychain_credentials(&service) {
             return Some(creds);
         }
     }
-    read_credentials_file(config_dir)
+    read_credentials_file(selector)
 }
 
-fn read_credentials_file(config_dir: Option<&std::path::Path>) -> Option<ClaudeCredentials> {
-    let path = claude_credentials_path(config_dir)?;
+fn read_credentials_file(selector: &OsStr) -> Option<ClaudeCredentials> {
+    let path = claude_credentials_path(selector)?;
     let raw = std::fs::read_to_string(&path).ok()?;
     credentials_from_blob(&raw)
 }
 
-fn claude_credentials_path(config_dir: Option<&std::path::Path>) -> Option<PathBuf> {
-    if let Some(dir) = config_dir {
-        return Some(dir.join(".credentials.json"));
+fn claude_credentials_path(selector: &OsStr) -> Option<PathBuf> {
+    if !selector.is_empty() {
+        return Some(Path::new(selector).join(".credentials.json"));
     }
     let home = dirs_home().or_else(|| {
         std::env::var_os("USERPROFILE").map(|value| value.to_string_lossy().into_owned())
@@ -615,23 +602,21 @@ fn keychain_find_args(service: &str) -> Vec<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn claude_keychain_service(config_dir: Option<&std::path::Path>) -> String {
-    let Some(config_dir) = config_dir else {
+fn claude_keychain_service(selector: &OsStr) -> String {
+    if selector.is_empty() {
         return LEGACY_KEYCHAIN_SERVICE.into();
-    };
+    }
     // Claude Code hashes the exact, NFC-normalized selector string and uses
     // the first eight lowercase hex characters as its Keychain service suffix.
-    let selector: String = config_dir.to_string_lossy().nfc().collect();
+    let selector: String = selector.to_string_lossy().nfc().collect();
     let digest = Sha256::digest(selector.as_bytes());
     let suffix = format!("{digest:x}");
     format!("{LEGACY_KEYCHAIN_SERVICE}-{}", &suffix[..8])
 }
 
 #[cfg(target_os = "macos")]
-pub(crate) fn delete_claude_keychain_credentials(
-    config_dir: &std::path::Path,
-) -> Result<(), String> {
-    let service = claude_keychain_service(Some(config_dir));
+pub(crate) fn delete_claude_keychain_credentials(config_dir: &Path) -> Result<(), String> {
+    let service = claude_keychain_service(claude_credential_selector(Some(config_dir)));
     let args = vec![
         "delete-generic-password".into(),
         "-s".into(),
@@ -790,25 +775,6 @@ mod tests {
     }
 
     #[test]
-    fn default_account_prefers_the_most_recently_refreshed_sign_in() {
-        let creds = |token: &str, expires_at_ms| ClaudeCredentials {
-            access_token: token.into(),
-            expires_at_ms,
-        };
-        let picked = freshest(
-            [
-                creds("stale", Some(1)),
-                creds("fresh", Some(2)),
-                creds("unknown", None),
-            ]
-            .into_iter(),
-        )
-        .unwrap();
-        assert_eq!(picked.access_token, "fresh");
-        assert!(freshest(std::iter::empty()).is_none());
-    }
-
-    #[test]
     fn opencode_go_forbidden_maps_to_unavailable() {
         // A valid key without a Go subscription hides the chip
         // instead of rendering an error.
@@ -919,9 +885,30 @@ mod tests {
     #[test]
     fn custom_config_dir_selects_claudes_hashed_keychain_service() {
         assert_eq!(
-            claude_keychain_service(Some(std::path::Path::new("/tmp/profile"))),
+            claude_keychain_service(claude_credential_selector(Some(Path::new("/tmp/profile")))),
             "Claude Code-credentials-902e721c"
         );
-        assert_eq!(claude_keychain_service(None), "Claude Code-credentials");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn default_account_reads_the_unsuffixed_keychain_item_claude_launches_with() {
+        let selector = claude_credential_selector(None);
+        assert_eq!(selector, OsStr::new(""));
+        assert_eq!(claude_keychain_service(selector), "Claude Code-credentials");
+        assert_ne!(
+            claude_keychain_service(selector),
+            claude_keychain_service(OsStr::new("/Users/someone/.claude"))
+        );
+    }
+
+    #[test]
+    fn credentials_file_follows_the_launch_selector() {
+        assert_eq!(
+            claude_credentials_path(claude_credential_selector(Some(Path::new("/tmp/profile")))),
+            Some(PathBuf::from("/tmp/profile/.credentials.json"))
+        );
+        let default = claude_credentials_path(claude_credential_selector(None)).unwrap();
+        assert!(default.ends_with(".claude/.credentials.json"));
     }
 }
