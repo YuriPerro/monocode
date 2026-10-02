@@ -40,6 +40,8 @@ export type {
 export type ControlOutcome = {
   status: "completed" | "failed" | "cancelled";
   text: string;
+  /** The turn's last assistant message, without the narration between tool calls. */
+  reply?: string;
   error?: string;
 };
 export type WorkerPreparation = {
@@ -1636,11 +1638,9 @@ export class Orchestrator {
   ) {
     let task = this.run(leadId)?.tasks.find((entry) => entry.id === taskId);
     if (!task || task.activeDispatchId !== dispatchId) return;
+    const result = (outcome.reply || outcome.text).slice(-20_000);
     if (task?.status === "cancelling") {
-      if (outcome.text)
-        await this.patchTask(leadId, taskId, {
-          result: outcome.text.slice(-20_000),
-        });
+      if (result) await this.patchTask(leadId, taskId, { result });
       return;
     }
     if (task.status !== "running") return;
@@ -1662,7 +1662,7 @@ export class Orchestrator {
           ? {
               ...entry,
               status: outcome.status,
-              result: outcome.text.slice(-20_000),
+              result,
               error: outcome.error,
               recoveryPrompt: undefined,
               delivered: false,
@@ -1679,7 +1679,7 @@ export class Orchestrator {
               state: outcome.status,
               stage: "settled",
               updatedAt: Date.now(),
-              result: outcome.text.slice(-20_000),
+              result,
               error: outcome.error,
             }
           : dispatch,

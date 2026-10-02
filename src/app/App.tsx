@@ -6964,14 +6964,23 @@ function Workspace({
         } finally {
           if (turnGen.current.get(sessionId) !== gen) return;
           flushHarnessEvents();
+          const settledStatus =
+            providerFailureSeen ||
+            isProviderFailureText(controlText) ||
+            !buildSucceeded
+              ? "failed"
+              : "completed";
+          const settledSession = sessionsRef.current.find(
+            (s) => s.id === sessionId,
+          );
+          const reply =
+            settledStatus === "completed" && settledSession
+              ? lastAssistantTextInTurn(settledSession).trim()
+              : "";
           controlOutcome = {
-            status:
-              providerFailureSeen ||
-              isProviderFailureText(controlText) ||
-              !buildSucceeded
-                ? "failed"
-                : "completed",
+            status: settledStatus,
             text: controlText.trim(),
+            ...(reply ? { reply } : {}),
             ...(providerFailureSeen ? { error: controlOutcome.error } : {}),
           };
           // A failed provider can leave its process alive with a dead event

@@ -1156,6 +1156,41 @@ describe("local orchestration", () => {
     f.manager.sync();
     expect(f.host.submit).toHaveBeenCalledTimes(2);
   });
+  it("keeps only the worker's final reply as its result", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "completed",
+      text: "I'll read src/a.ts first.\nNow running the tests.\nReport: done, tests pass",
+      reply: "Report: done, tests pass",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    expect(f.tasks()[0].result).toBe("Report: done, tests pass");
+    expect(f.manager.run("lead")!.dispatches?.at(-1)?.result).toBe(
+      "Report: done, tests pass",
+    );
+    expect(await f.call("get", { taskId: f.tasks()[0].id })).toMatchObject({
+      result: "Report: done, tests pass",
+    });
+  });
+  it("falls back to the streamed text when a turn ends without a final reply", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "failed",
+      text: "I'll read src/a.ts first.",
+      error: "Provider crashed",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("failed"));
+    expect(f.tasks()[0]).toMatchObject({
+      result: "I'll read src/a.ts first.",
+      error: "Provider crashed",
+    });
+  });
   it("keeps results available and pauses when the lead cannot continue", async () => {
     const f = setup();
     await f.start();
