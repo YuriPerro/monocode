@@ -186,6 +186,8 @@ export function finalTurnReply(session: Session): string {
 }
 
 const RESULT_EXCERPT = 4_000;
+/** A dependent builds on the whole report, so it gets the stored result's full cap. */
+const PREREQUISITE_EXCERPT = 20_000;
 
 /** Keep both ends of a long result: reports open with the verdict and close with the checks. */
 export function clipMiddle(text: string, limit: number): string {
@@ -205,7 +207,7 @@ export function withPrerequisiteResults(
     .filter((task) => task.result.trim())
     .map(
       (task) =>
-        `${task.id} — ${task.title}\n${clipMiddle(task.result.trim(), RESULT_EXCERPT)}`,
+        `${task.id} — ${task.title}\n${clipMiddle(task.result.trim(), PREREQUISITE_EXCERPT)}`,
     );
   if (!reports.length) return prompt;
   return `${prompt}\n\n<prerequisite_results>\nFinal reports of the tasks this assignment depends on, accepted by the lead. Use them as context; the assignment above still defines your work.\n\n${reports.join("\n\n")}\n</prerequisite_results>`;

@@ -212,18 +212,26 @@ describe("prerequisite results", () => {
       ]),
     ).toBe("Build the UI.");
   });
+  it("passes a report longer than the lead excerpt through whole", () => {
+    const report = `Verdict: ready${"-".repeat(7_800)}All checks pass`;
+    const sent = withPrerequisiteResults("Build the UI.", [
+      { id: "t1", title: "Types", result: report },
+    ]);
+    expect(sent).toContain(report);
+    expect(sent).not.toContain("characters cut");
+  });
   it("clips a long prerequisite report at both ends", () => {
     const sent = withPrerequisiteResults("Build the UI.", [
       {
         id: "t1",
         title: "Types",
-        result: `Verdict: ready${"-".repeat(10_000)}All checks pass`,
+        result: `Verdict: ready${"-".repeat(30_000)}All checks pass`,
       },
     ]);
     expect(sent).toContain("Verdict: ready");
     expect(sent).toContain("characters cut");
     expect(sent).toContain("All checks pass");
-    expect(sent.length).toBeLessThan(5_000);
+    expect(sent.length).toBeLessThan(21_000);
   });
 });
 
