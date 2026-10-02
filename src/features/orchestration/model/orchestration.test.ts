@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Orchestrator,
+  clipMiddle,
   orchestrationPathKey,
   scopesOverlap,
   visibleUserPrompt,
@@ -135,6 +136,24 @@ describe("worker assignment prompts", () => {
     expect(sent).toContain("This assignment is read-only");
     expect(sent).toContain("/tmp/scratch");
     expect(sent).not.toContain("write scope is:");
+  });
+});
+
+describe("result excerpts", () => {
+  it("leaves a result within the limit untouched", () => {
+    const report = "x".repeat(4000);
+    expect(clipMiddle(report, 4000)).toBe(report);
+  });
+  it("keeps the start and the end of a long result within the limit", () => {
+    const report = `Verdict: ready${"-".repeat(10_000)}All checks pass`;
+    const clipped = clipMiddle(report, 4000);
+    expect(clipped.length).toBeLessThanOrEqual(4000);
+    expect(clipped.startsWith("Verdict: ready")).toBe(true);
+    expect(clipped.endsWith("All checks pass")).toBe(true);
+    const [marker, cut] = clipped.match(
+      /\n\n\[\.\.\. (\d+) characters cut \.\.\.\]\n\n/,
+    )!;
+    expect(clipped.length - marker.length + Number(cut)).toBe(report.length);
   });
 });
 
@@ -1155,6 +1174,23 @@ describe("local orchestration", () => {
     expect(vi.mocked(f.host.submit).mock.calls[1][1]).toContain("Tests pass");
     f.manager.sync();
     expect(f.host.submit).toHaveBeenCalledTimes(2);
+  });
+  it("tells the lead both ends of a long worker report", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.lead.busy = false;
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "completed",
+      text: "",
+      reply: `Verdict: ready${"-".repeat(10_000)}All checks pass`,
+    });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    const notice = vi.mocked(f.host.submit).mock.calls[1][1];
+    expect(notice).toContain("Verdict: ready");
+    expect(notice).toContain("characters cut");
+    expect(notice).toContain("All checks pass");
   });
   it("keeps only the worker's final reply as its result", async () => {
     const f = setup();
