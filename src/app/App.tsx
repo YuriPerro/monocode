@@ -34,6 +34,7 @@ import {
 } from "../features/inbox/model/ciRepairTracking";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  finalTurnReply,
   orchestrationCheckoutCwd,
   orchestrationProjectCwd,
   orchestrator,
@@ -6964,14 +6965,23 @@ function Workspace({
         } finally {
           if (turnGen.current.get(sessionId) !== gen) return;
           flushHarnessEvents();
+          const settledStatus =
+            providerFailureSeen ||
+            isProviderFailureText(controlText) ||
+            !buildSucceeded
+              ? "failed"
+              : "completed";
+          const settledSession = sessionsRef.current.find(
+            (s) => s.id === sessionId,
+          );
+          const reply =
+            settledStatus === "completed" && settledSession
+              ? finalTurnReply(settledSession)
+              : "";
           controlOutcome = {
-            status:
-              providerFailureSeen ||
-              isProviderFailureText(controlText) ||
-              !buildSucceeded
-                ? "failed"
-                : "completed",
+            status: settledStatus,
             text: controlText.trim(),
+            ...(reply ? { reply } : {}),
             ...(providerFailureSeen ? { error: controlOutcome.error } : {}),
           };
           // A failed provider can leave its process alive with a dead event

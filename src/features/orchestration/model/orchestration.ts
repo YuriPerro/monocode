@@ -40,6 +40,8 @@ export type {
 export type ControlOutcome = {
   status: "completed" | "failed" | "cancelled";
   text: string;
+  /** The turn's last assistant message, without the narration between tool calls. */
+  reply?: string;
   error?: string;
 };
 export type WorkerPreparation = {
@@ -175,6 +177,38 @@ export function workerTurnPrompt(
     ? `Your assigned write scope is: ${files.join(", ")}.${scratch} Read other files as needed, but do not edit outside your scope.`
     : `This assignment is read-only: you have no write scope, and any edit to a project file stops you.${scratch} Read any files you need and report your findings.`;
   return `${prompt}\n\n<monocode_assignment>\nYou are a worker managed by a MonoCode lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. ${scope} If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. Do not spawn agents, create worktrees, switch branches, stage, commit, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, but Git finalization remains the lead's responsibility after integration. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</monocode_assignment>`;
+}
+
+/** A turn's final reply, only while no tool call or other block follows the assistant's last message. */
+export function finalTurnReply(session: Session): string {
+  const last = session.blocks[session.blocks.length - 1];
+  return last?.role === "assistant" ? last.text.trim() : "";
+}
+
+const RESULT_EXCERPT = 4_000;
+
+/** Keep both ends of a long result: reports open with the verdict and close with the checks. */
+export function clipMiddle(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  const marker = (cut: number) => `\n\n[... ${cut} characters cut ...]\n\n`;
+  const room = limit - marker(text.length).length;
+  const head = Math.ceil(room / 2);
+  return `${text.slice(0, head)}${marker(text.length - room)}${text.slice(text.length - (room - head))}`;
+}
+
+/** Hand a dependent task the accepted reports it builds on, so it need not reinvestigate. */
+export function withPrerequisiteResults(
+  prompt: string,
+  prerequisites: Pick<OrchestrationTask, "id" | "title" | "result">[],
+): string {
+  const reports = prerequisites
+    .filter((task) => task.result.trim())
+    .map(
+      (task) =>
+        `${task.id} — ${task.title}\n${clipMiddle(task.result.trim(), RESULT_EXCERPT)}`,
+    );
+  if (!reports.length) return prompt;
+  return `${prompt}\n\n<prerequisite_results>\nFinal reports of the tasks this assignment depends on, accepted by the lead. Use them as context; the assignment above still defines your work.\n\n${reports.join("\n\n")}\n</prerequisite_results>`;
 }
 
 /** Task text a person should see: the assignment envelope stays in the send. */
@@ -1587,7 +1621,14 @@ export class Orchestrator {
             )
               continue;
             const prompt = workerTurnPrompt(
-              task.recoveryPrompt ?? task.prompt,
+              task.recoveryPrompt ??
+                withPrerequisiteResults(
+                  task.prompt,
+                  preparedRun.tasks.filter(
+                    (entry) =>
+                      task.dependsOn.includes(entry.id) && entry.accepted,
+                  ),
+                ),
               task.files,
               prepared.scratchDir,
             );
@@ -1636,11 +1677,9 @@ export class Orchestrator {
   ) {
     let task = this.run(leadId)?.tasks.find((entry) => entry.id === taskId);
     if (!task || task.activeDispatchId !== dispatchId) return;
+    const result = (outcome.reply || outcome.text).slice(-20_000);
     if (task?.status === "cancelling") {
-      if (outcome.text)
-        await this.patchTask(leadId, taskId, {
-          result: outcome.text.slice(-20_000),
-        });
+      if (result) await this.patchTask(leadId, taskId, { result });
       return;
     }
     if (task.status !== "running") return;
@@ -1662,7 +1701,7 @@ export class Orchestrator {
           ? {
               ...entry,
               status: outcome.status,
-              result: outcome.text.slice(-20_000),
+              result,
               error: outcome.error,
               recoveryPrompt: undefined,
               delivered: false,
@@ -1679,7 +1718,7 @@ export class Orchestrator {
               state: outcome.status,
               stage: "settled",
               updatedAt: Date.now(),
-              result: outcome.text.slice(-20_000),
+              result,
               error: outcome.error,
             }
           : dispatch,
@@ -2046,7 +2085,7 @@ export class Orchestrator {
             const summary = results
               .map(
                 (task) =>
-                  `${task.id} — ${task.title}: ${task.status}\n${task.error ?? ""}\n${task.result.slice(-4000)}`,
+                  `${task.id} — ${task.title}: ${task.status}\n${task.error ?? ""}\n${clipMiddle(task.result, RESULT_EXCERPT)}`,
               )
               .join("\n\n");
             const asks = waiting

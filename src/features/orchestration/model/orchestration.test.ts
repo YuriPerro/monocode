@@ -1,16 +1,19 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Orchestrator,
+  clipMiddle,
+  finalTurnReply,
   orchestrationPathKey,
   scopesOverlap,
   visibleUserPrompt,
+  withPrerequisiteResults,
   workerTurnPrompt,
   type ControlOutcome,
   type OrchestrationHost,
   type OrchestrationRun,
   shellPath,
 } from "./orchestration";
-import { newSession } from "../../sessions/model/session";
+import { newSession, type Block } from "../../sessions/model/session";
 import type { OrchestrationProposal } from "./orchestrationPlan";
 import { normalizeOrchestrationRun } from "./orchestrationState";
 import { previewFromToolPart } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
@@ -135,6 +138,92 @@ describe("worker assignment prompts", () => {
     expect(sent).toContain("This assignment is read-only");
     expect(sent).toContain("/tmp/scratch");
     expect(sent).not.toContain("write scope is:");
+  });
+});
+
+describe("result excerpts", () => {
+  it("leaves a result within the limit untouched", () => {
+    const report = "x".repeat(4000);
+    expect(clipMiddle(report, 4000)).toBe(report);
+  });
+  it("keeps the start and the end of a long result within the limit", () => {
+    const report = `Verdict: ready${"-".repeat(10_000)}All checks pass`;
+    const clipped = clipMiddle(report, 4000);
+    expect(clipped.length).toBeLessThanOrEqual(4000);
+    expect(clipped.startsWith("Verdict: ready")).toBe(true);
+    expect(clipped.endsWith("All checks pass")).toBe(true);
+    const [marker, cut] = clipped.match(
+      /\n\n\[\.\.\. (\d+) characters cut \.\.\.\]\n\n/,
+    )!;
+    expect(clipped.length - marker.length + Number(cut)).toBe(report.length);
+  });
+});
+
+describe("final turn reply", () => {
+  const turn = (...blocks: [Block["role"], string][]) => ({
+    ...newSession("claude", "/repo"),
+    blocks: blocks.map(([role, text], index) => ({
+      id: `block-${index}`,
+      role,
+      text,
+    })),
+  });
+  it("takes the assistant's last message when it closes the turn", () => {
+    expect(
+      finalTurnReply(
+        turn(
+          ["user", "Fix the bug."],
+          ["assistant", "I'll read src/a.ts first."],
+          ["tool", "Read src/a.ts"],
+          ["assistant", "Report: fixed, tests pass\n"],
+        ),
+      ),
+    ).toBe("Report: fixed, tests pass");
+  });
+  it("finds no reply when a tool call follows the assistant's last message", () => {
+    expect(
+      finalTurnReply(
+        turn(
+          ["user", "Fix the bug."],
+          ["assistant", "Now running the tests."],
+          ["tool", "bun test"],
+        ),
+      ),
+    ).toBe("");
+  });
+});
+
+describe("prerequisite results", () => {
+  it("appends each prerequisite report in a delimited block", () => {
+    const sent = withPrerequisiteResults("Build the UI.", [
+      { id: "t1", title: "Types", result: "Types ready in src/types.ts" },
+      { id: "t2", title: "API", result: "Endpoint added" },
+    ]);
+    expect(sent).toMatch(
+      /^Build the UI\.\n\n<prerequisite_results>\n[\s\S]*<\/prerequisite_results>$/,
+    );
+    expect(sent).toContain("t1 — Types\nTypes ready in src/types.ts");
+    expect(sent).toContain("t2 — API\nEndpoint added");
+  });
+  it("leaves the prompt alone when no prerequisite has a result", () => {
+    expect(
+      withPrerequisiteResults("Build the UI.", [
+        { id: "t1", title: "Types", result: "  " },
+      ]),
+    ).toBe("Build the UI.");
+  });
+  it("clips a long prerequisite report at both ends", () => {
+    const sent = withPrerequisiteResults("Build the UI.", [
+      {
+        id: "t1",
+        title: "Types",
+        result: `Verdict: ready${"-".repeat(10_000)}All checks pass`,
+      },
+    ]);
+    expect(sent).toContain("Verdict: ready");
+    expect(sent).toContain("characters cut");
+    expect(sent).toContain("All checks pass");
+    expect(sent.length).toBeLessThan(5_000);
   });
 });
 
@@ -711,6 +800,41 @@ describe("local orchestration", () => {
     await f.call("review", { taskId: upstream.id });
     await vi.waitFor(() => expect(f.tasks()[1].status).toBe("running"));
   });
+  it("hands a dependent worker the accepted prerequisite's final reply", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src/types.ts"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const upstream = f.tasks()[0];
+    await f.delegate(["src/ui"], { dependsOn: [upstream.id] });
+    f.completions.get(upstream.sessionId)!({
+      status: "completed",
+      text: "Reading the types.\nTypes ready",
+      reply: "Types ready",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await f.call("review", { taskId: upstream.id });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    const sent = vi.mocked(f.host.submit).mock.calls[1][1];
+    expect(sent).toContain("<prerequisite_results>\nFinal reports");
+    expect(sent).toContain(`${upstream.id} — Task\nTypes ready\n`);
+    expect(sent).not.toContain("Reading the types");
+  });
+  it("sends a dependent worker no prerequisite block when the upstream left no result", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src/types.ts"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const upstream = f.tasks()[0];
+    await f.delegate(["src/ui"], { dependsOn: [upstream.id] });
+    f.completions.get(upstream.sessionId)!({ status: "completed", text: "" });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await f.call("review", { taskId: upstream.id });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(f.host.submit).mock.calls[1][1]).not.toContain(
+      "prerequisite_results",
+    );
+  });
   it("deduplicates command retries and rejects foreign tasks or unapproved harnesses", async () => {
     const f = setup();
     await f.start();
@@ -1155,6 +1279,58 @@ describe("local orchestration", () => {
     expect(vi.mocked(f.host.submit).mock.calls[1][1]).toContain("Tests pass");
     f.manager.sync();
     expect(f.host.submit).toHaveBeenCalledTimes(2);
+  });
+  it("tells the lead both ends of a long worker report", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.lead.busy = false;
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "completed",
+      text: "",
+      reply: `Verdict: ready${"-".repeat(10_000)}All checks pass`,
+    });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    const notice = vi.mocked(f.host.submit).mock.calls[1][1];
+    expect(notice).toContain("Verdict: ready");
+    expect(notice).toContain("characters cut");
+    expect(notice).toContain("All checks pass");
+  });
+  it("keeps only the worker's final reply as its result", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "completed",
+      text: "I'll read src/a.ts first.\nNow running the tests.\nReport: done, tests pass",
+      reply: "Report: done, tests pass",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    expect(f.tasks()[0].result).toBe("Report: done, tests pass");
+    expect(f.manager.run("lead")!.dispatches?.at(-1)?.result).toBe(
+      "Report: done, tests pass",
+    );
+    expect(await f.call("get", { taskId: f.tasks()[0].id })).toMatchObject({
+      result: "Report: done, tests pass",
+    });
+  });
+  it("falls back to the streamed text when a turn ends without a final reply", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["a"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    f.completions.get(f.tasks()[0].sessionId)!({
+      status: "failed",
+      text: "I'll read src/a.ts first.",
+      error: "Provider crashed",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("failed"));
+    expect(f.tasks()[0]).toMatchObject({
+      result: "I'll read src/a.ts first.",
+      error: "Provider crashed",
+    });
   });
   it("keeps results available and pauses when the lead cannot continue", async () => {
     const f = setup();
