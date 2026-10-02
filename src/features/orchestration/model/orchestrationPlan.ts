@@ -30,10 +30,18 @@ export type OrchestrationProposal = {
   request: string;
   author: OrchestrationChoice;
   settings: OrchestrationSettings;
-  status: "planning" | "ready" | "invalid" | "starting" | "approved";
+  status:
+    | "planning"
+    | "ready"
+    | "invalid"
+    | "starting"
+    | "approved"
+    | "answered";
   title: string;
   summary: string;
   tasks: ProposedTask[];
+  /** The lead's reply when the request needed no workers. */
+  answer?: string;
   error?: string;
   /** Kept only for invalid cards so a retry can repair the response directly. */
   response?: string;
@@ -244,6 +252,7 @@ export function orchestrationPlanningPrompt(
     `The exact checkout root is ${JSON.stringify(cwd)}. Every files entry must be "." or a path relative to this root; an empty list means read-only. For example, a discovered absolute path beneath this root must be returned without the root prefix. Never use an absolute path or '..'.`,
     "Return your final proposal as one JSON object inside <monocode_proposal>...</monocode_proposal>. The app renders it as an editable card, so do not ask for approval in prose. No Markdown inside the JSON fields. Tasks may reference any task ID; the graph must be acyclic.",
     'Schema: {"title":"Short project title","summary":"What you will do and how the work fits together","tasks":[{"id":"task-1","title":"Short task title","prompt":"Self-contained instructions, constraints and checks","harness":"exact harness ID","model":"exact model ID","files":["src/feature"],"dependsOn":[]}]}',
+    'Default to not delegating. When the request is a question or an analysis you can resolve yourself by reading the project, answer it directly and create no workers: return {"title":"Short title","answer":"Your complete answer in plain text","tasks":[]}. Create tasks only when the request needs project edits, or when independent parts gain from parallel workers or a large investigation would return a short result. Never answer instead of doing requested edits; the user can still ask you to delegate.',
     `Parallel worker limit: ${settings.maxWorkers}`,
     `<available_models>\n${JSON.stringify(settings.choices)}\n</available_models>`,
     `<user_request>\n${request}\n</user_request>`,
@@ -263,6 +272,21 @@ export function completeOrchestrationProposal(
     const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
     const raw = (tagged?.[1] ?? fenced?.[1] ?? response).trim();
     const input = record(JSON.parse(raw));
+    if (
+      Array.isArray(input.tasks) &&
+      !input.tasks.length &&
+      input.answer !== undefined
+    )
+      return {
+        ...draft,
+        title: required(input.title, "a proposal title", 160),
+        summary: "",
+        answer: required(input.answer, "an answer"),
+        tasks: [],
+        status: "answered",
+        error: undefined,
+        response: undefined,
+      };
     return {
       ...draft,
       title: required(input.title, "a proposal title", 160),
@@ -317,6 +341,8 @@ export async function completeOrRepairOrchestrationProposal(
 }
 
 export function proposalMarkdown(proposal: OrchestrationProposal): string {
+  if (proposal.status === "answered")
+    return `# ${proposal.title}\n\n${proposal.answer ?? ""}`;
   return [
     `# ${proposal.title}`,
     proposal.summary,

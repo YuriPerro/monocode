@@ -475,6 +475,7 @@ export function OrchestrationPreview({
   const editable =
     proposal.status === "ready" && !run && !pending && !busy && !!actions;
   const planning = proposal.status === "planning";
+  const answered = proposal.status === "answered";
   const starting = pending || proposal.status === "starting";
   const visible = showAll ? proposal.tasks : proposal.tasks.slice(0, 3);
   const perform = async (fn: () => Promise<void>) => {
@@ -585,6 +586,11 @@ export function OrchestrationPreview({
           {proposal.settings.choices.length
             ? "Your lead is choosing tasks and worker models. Review the assignments here before starting."
             : "Checking available harnesses and models…"}
+        </p>
+      )}
+      {answered && (
+        <p className="whitespace-pre-wrap border-t border-stroke px-3 py-2.5 text-[12px] leading-5 text-content/70">
+          {proposal.answer}
         </p>
       )}
       {!!proposal.tasks.length && (
@@ -732,7 +738,7 @@ export function OrchestrationPreview({
           {error ?? proposal.error}
         </p>
       )}
-      {!planning && (
+      {!planning && !answered && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stroke px-3 py-2 text-[11px] text-content/45">
           <div className="flex items-center gap-1.5">
             {editable ? (
