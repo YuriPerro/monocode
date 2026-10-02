@@ -57,6 +57,16 @@ describe("orchestration proposals", () => {
     expect(result.response).toBeUndefined();
   });
 
+  it("accepts a read-only assignment without file scopes", () => {
+    const result = completeOrchestrationProposal(
+      draft,
+      JSON.stringify({ ...payload, tasks: [{ ...task, files: [] }] }),
+    );
+    expect(result.status).toBe("ready");
+    expect(result.tasks[0].files).toEqual([]);
+    expect(proposalBlock("card", result).text).toContain("Files: read-only");
+  });
+
   it("never guesses ambiguous harnesses or replaces an explicit unavailable choice", () => {
     const settings = {
       ...draft.settings,

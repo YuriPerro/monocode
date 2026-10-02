@@ -625,6 +625,11 @@ export function OrchestrationPreview({
                     <span className="truncate text-[12px]" title={task.title}>
                       {task.title}
                     </span>
+                    {!task.files.length && (
+                      <span className="shrink-0 rounded bg-content/8 px-1.5 text-[11px] leading-4 text-content/50">
+                        Read-only
+                      </span>
+                    )}
                   </button>
                   <div className="max-w-[60%] min-w-0">
                     {editable ? (

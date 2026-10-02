@@ -20,7 +20,9 @@ Actions, with the JSON object each one takes:
             defaults to the first model list allows for that harness.
             "files" is the write scope: project-relative paths, where a
             directory covers its descendants and ["."] reserves the whole
-            checkout. "dependsOn" holds taskIds that must be reviewed first.
+            checkout. [] makes the task read-only: it never queues behind
+            other workers and any write stops it. "dependsOn" holds taskIds
+            that must be reviewed first.
   get       {"taskId":"..."}
             One task, including its latest result.
   wait      {"timeoutSeconds":20}

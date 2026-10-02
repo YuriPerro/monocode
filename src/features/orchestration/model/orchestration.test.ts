@@ -129,6 +129,13 @@ describe("worker assignment prompts", () => {
     );
     expect(visibleUserPrompt(sent)).toBe("Review the branch.");
   });
+
+  it("tells a worker without scope that any edit stops it", () => {
+    const sent = workerTurnPrompt("Audit the engine.", [], "/tmp/scratch");
+    expect(sent).toContain("This assignment is read-only");
+    expect(sent).toContain("/tmp/scratch");
+    expect(sent).not.toContain("write scope is:");
+  });
 });
 
 describe("local orchestration", () => {
@@ -641,6 +648,52 @@ describe("local orchestration", () => {
     });
     await vi.waitFor(() => expect(f.tasks()[2].status).toBe("running"));
     expect(f.tasks()[0].accepted).toBe(false);
+  });
+  it("never queues work behind a read-only task or a read-only task behind work", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate([]);
+    await f.delegate(["."]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    expect(f.tasks().map((task) => task.status)).toEqual([
+      "running",
+      "running",
+    ]);
+    expect(f.tasks()[0].scopes).toEqual([]);
+  });
+  it("blocks a read-only worker on its first write and refuses to retry it without scope", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate([]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledOnce());
+    const reader = f.tasks()[0];
+    f.manager.observe(reader.sessionId, {
+      type: "tool.started",
+      callId: "edit",
+      title: "Edit",
+      preview: { kind: "write", path: "src/a.ts" },
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("blocked"));
+    expect(f.tasks()[0].error).toContain("outside its assignment");
+    expect(f.tasks()[0].error).toContain("checkout was retained");
+    expect(f.host.cleanupWorker).not.toHaveBeenCalled();
+    await expect(
+      f.call("retry", { taskId: reader.id, text: "Again", files: [] }),
+    ).rejects.toThrow("at least one corrected");
+  });
+  it("accepts a finished read-only task on review", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate([]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledOnce());
+    const reader = f.tasks()[0];
+    f.completions.get(reader.sessionId)!({
+      status: "completed",
+      text: "Findings",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await f.call("review", { taskId: reader.id });
+    expect(f.tasks()[0].accepted).toBe(true);
   });
   it("keeps a dependency queued until the lead accepts the upstream result", async () => {
     const f = setup();
@@ -1209,7 +1262,6 @@ describe("local orchestration", () => {
     await expect(f.delegate(["a"], { model: "codex:ghost" })).rejects.toThrow(
       "Choose a model ID returned by list for codex: codex:test.",
     );
-    await expect(f.delegate([], {})).rejects.toThrow("at least one file");
     await expect(
       f.call("delegate", {
         title: "T",
