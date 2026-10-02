@@ -1,8 +1,11 @@
 import { useSyncExternalStore } from "react";
+import type { HarnessId } from "../../sessions/model/session";
 import {
   errorRateLimits,
   fetchingRateLimits,
   idleRateLimits,
+  mergeCodexRateLimitsUpdate,
+  RATE_LIMIT_MIN_REFETCH_MS,
   type ProviderRateLimits,
   type RateLimitProvider,
 } from "./rateLimits";
@@ -11,6 +14,10 @@ import {
   fetchCodexRateLimits,
   fetchOpencodeGoRateLimits,
 } from "./rateLimitsFetch";
+import {
+  providerAccountExists,
+  supportsProviderAccounts,
+} from "./providerAccounts";
 
 const snapshots = new Map<string, ProviderRateLimits>();
 const pending = new Map<string, Promise<ProviderRateLimits>>();
@@ -69,7 +76,7 @@ export function setCachedRateLimits(
   publish(keyFor(provider, accountId), value);
 }
 
-/** Fetch an account once per window lifetime, or again on explicit refresh. */
+/** Fetch an account once, or again when `force` is set. */
 export function loadRateLimits(
   provider: RateLimitProvider,
   accountId = "default",
@@ -93,29 +100,90 @@ export function loadRateLimits(
 
   publish(key, fetchingRateLimits(provider, cached));
   const run = (async () => {
+    let result: ProviderRateLimits;
     try {
-      const result =
+      result =
         provider === "claude"
           ? await fetchClaudeRateLimits(accountId)
           : provider === "codex"
             ? await fetchCodexRateLimits(accountId)
             : await fetchOpencodeGoRateLimits();
-      publish(key, result);
-      return result;
     } catch (error) {
-      const result = errorRateLimits(
+      result = errorRateLimits(
         provider,
         error instanceof Error ? error.message : String(error),
-        getCachedRateLimits(provider, accountId),
       );
-      publish(key, result);
-      return result;
     } finally {
       pending.delete(key);
     }
+    if (
+      result.status === "error" &&
+      !result.session &&
+      !result.weekly &&
+      !result.monthly
+    ) {
+      result = errorRateLimits(
+        provider,
+        result.error ?? "Usage unavailable",
+        getCachedRateLimits(provider, accountId),
+      );
+    }
+    publish(key, result);
+    return result;
   })();
   pending.set(key, run);
   return run;
+}
+
+/**
+ * Focus and turn-end refetches wait out RATE_LIMIT_MIN_REFETCH_MS. A provider
+ * that reported "unavailable" waits for an explicit refresh or re-login.
+ */
+export function isRateLimitSnapshotStale(
+  limits: ProviderRateLimits | undefined,
+  now = Date.now(),
+): boolean {
+  if (!limits || limits.status === "idle") return true;
+  if (limits.status === "unavailable") return false;
+  return now - limits.updatedAt >= RATE_LIMIT_MIN_REFETCH_MS;
+}
+
+/** Refetch a stale snapshot; a fresh one or an in-flight request is reused. */
+export function refreshStaleRateLimits(
+  provider: RateLimitProvider,
+  accountId = "default",
+  now = Date.now(),
+): Promise<ProviderRateLimits> {
+  const key = keyFor(provider, accountId);
+  const stale =
+    !pending.has(key) && isRateLimitSnapshotStale(snapshots.get(key), now);
+  return loadRateLimits(provider, accountId, stale);
+}
+
+/** A turn that stopped on its usage limit refetches past the throttle. */
+export function refreshRateLimitsAfterTurn(
+  harness: HarnessId,
+  accountId = "default",
+  usageLimited = false,
+): void {
+  if (!supportsProviderAccounts(harness)) return;
+  if (!providerAccountExists(harness, accountId)) return;
+  void (usageLimited
+    ? loadRateLimits(harness, accountId, true)
+    : refreshStaleRateLimits(harness, accountId));
+}
+
+/** Publish a live Codex `account/rateLimits/updated` snapshot without a request. */
+export function noteLiveRateLimits(
+  harness: HarnessId,
+  accountId: string,
+  update: Record<string, unknown>,
+): void {
+  if (harness !== "codex") return;
+  if (!providerAccountExists(harness, accountId)) return;
+  const key = keyFor(harness, accountId);
+  const merged = mergeCodexRateLimitsUpdate(snapshots.get(key), update);
+  if (merged) publish(key, merged);
 }
 
 /** Also used when an account is removed and by tests that need a clean cache. */

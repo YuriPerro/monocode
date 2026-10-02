@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const usage = vi.hoisted(() => ({
+  noteLiveRateLimits: vi.fn(),
+  refreshRateLimitsAfterTurn: vi.fn(),
+}));
+
+vi.mock("../../../features/providers/model/rateLimitsCache", () => usage);
+
 import {
   resetHarnessModelOverlays,
   setHarnessModels,
@@ -295,6 +303,98 @@ describe("harness registry", () => {
     await vi.advanceTimersByTimeAsync(1);
     expect(stopSession).toHaveBeenCalledWith("s1");
   });
+  it("refreshes the turn's account usage when the turn ends", async () => {
+    usage.refreshRateLimitsAfterTurn.mockReset();
+    const events: string[] = [];
+    registerHarness(
+      stub("claude", {
+        async sendTurn(input) {
+          expect(usage.refreshRateLimitsAfterTurn).not.toHaveBeenCalled();
+          input.onEvent({ type: "status", text: "working" });
+        },
+      }),
+    );
+
+    await sendHarnessTurn({
+      harness: "claude",
+      sessionId: "s-usage",
+      cwd: "/tmp",
+      model: "claude:sonnet",
+      providerAccountId: "account-work",
+      text: "hi",
+      runtimeMode: "supervised",
+      onEvent: (event) => events.push(event.type),
+    });
+
+    expect(events).toEqual(["status"]);
+    expect(usage.refreshRateLimitsAfterTurn).toHaveBeenCalledWith(
+      "claude",
+      "account-work",
+      false,
+    );
+  });
+
+  it("forces the usage refresh after a usage-limit stop, even on failure", async () => {
+    usage.refreshRateLimitsAfterTurn.mockReset();
+    registerHarness(
+      stub("claude", {
+        async sendTurn(input) {
+          input.onEvent({ type: "usage.limited", resetsAt: 1 });
+          throw new Error("limit");
+        },
+      }),
+    );
+
+    await expect(
+      sendHarnessTurn({
+        harness: "claude",
+        sessionId: "s-limited",
+        cwd: "/tmp",
+        model: "claude:sonnet",
+        text: "hi",
+        runtimeMode: "supervised",
+        onEvent: () => undefined,
+      }),
+    ).rejects.toThrow("limit");
+
+    expect(usage.refreshRateLimitsAfterTurn).toHaveBeenCalledWith(
+      "claude",
+      "default",
+      true,
+    );
+  });
+
+  it("publishes live Codex rate limits instead of forwarding them", async () => {
+    usage.noteLiveRateLimits.mockReset();
+    const snapshot = { limitId: "codex", primary: null, secondary: null };
+    const onEvent = vi.fn();
+    registerHarness(
+      stub("codex", {
+        async sendTurn(input) {
+          input.onEvent({ type: "usage.rateLimits", snapshot });
+        },
+      }),
+    );
+
+    await sendHarnessTurn({
+      harness: "codex",
+      sessionId: "s-codex-usage",
+      cwd: "/tmp",
+      model: "codex:gpt-5",
+      providerAccountId: "account-work",
+      text: "hi",
+      runtimeMode: "supervised",
+      onEvent,
+    });
+
+    expect(usage.noteLiveRateLimits).toHaveBeenCalledWith(
+      "codex",
+      "account-work",
+      snapshot,
+    );
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("serializes provider-state operations per session", async () => {
     const order: string[] = [];
     let releaseFirst!: () => void;

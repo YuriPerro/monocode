@@ -323,6 +323,34 @@ export function parseCodexRateLimits(result: unknown): ProviderRateLimits {
   };
 }
 
+/** Bucket mirrored by `account/rateLimits/read`'s single-bucket `rateLimits`. */
+const CODEX_DEFAULT_LIMIT_ID = "codex";
+
+/**
+ * Merge a sparse `account/rateLimits/updated` snapshot into the last read.
+ * Returns null when there is no read to merge into, the update is for another
+ * bucket, or it carries no window.
+ */
+export function mergeCodexRateLimitsUpdate(
+  previous: ProviderRateLimits | undefined,
+  update: Record<string, unknown>,
+): ProviderRateLimits | null {
+  if (previous?.status !== "ok" && previous?.status !== "error") return null;
+  const limitId = stringField(update, "limitId");
+  if (limitId && limitId !== CODEX_DEFAULT_LIMIT_ID) return null;
+  const parsed = parseCodexRateLimits(update);
+  if (!parsed.session && !parsed.weekly && !parsed.monthly) return null;
+  return {
+    ...previous,
+    session: parsed.session ?? previous.session,
+    weekly: parsed.weekly ?? previous.weekly,
+    monthly: parsed.monthly ?? previous.monthly,
+    updatedAt: parsed.updatedAt,
+    error: null,
+    status: "ok",
+  };
+}
+
 /**
  * Parse the official OpenCode Go usage payload:
  * { usage: { rolling: { status, percent, resetsAt },

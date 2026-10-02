@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Switching a Claude or Codex conversation to another account continues it through a handoff on the next send instead of opening a new session. The divider names the incoming account, and switching back before sending restores the original thread.
+- Claude and Codex usage in the footer refreshes when a turn ends and when the window regains focus, at most once every five minutes per account unless the turn hit its usage limit. Codex takes the limits it reports during a turn without another request. A failed refresh keeps the last reading and shows the error.
 
 ### Fixed
 

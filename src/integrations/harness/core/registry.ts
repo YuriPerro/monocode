@@ -9,6 +9,10 @@ import type { GeneratedSessionTitle } from "../../../features/sessions/model/ses
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import { hasLiveCatalog } from "../../../features/sessions/model/models";
 import type { UserQuestionReply } from "../../../features/sessions/model/userQuestion";
+import {
+  noteLiveRateLimits,
+  refreshRateLimitsAfterTurn,
+} from "../../../features/providers/model/rateLimitsCache";
 import type { NativeCommandProvider } from "./nativeCommands";
 import type {
   ApprovalDecision,
@@ -226,11 +230,22 @@ export function sendHarnessTurn(input: SendTurnInput & { harness: HarnessId }) {
         cwd: input.cwd,
         appAccess: input.appAccess === true,
       });
+    const accountId = input.providerAccountId ?? "default";
+    let usageLimited = false;
+    const onEvent = (event: HarnessEvent) => {
+      if (event.type === "usage.rateLimits") {
+        noteLiveRateLimits(input.harness, accountId, event.snapshot);
+        return;
+      }
+      if (event.type === "usage.limited") usageLimited = true;
+      input.onEvent(event);
+    };
     activeTurnSessions.add(input.sessionId);
     try {
-      await adapter.sendTurn(input);
+      await adapter.sendTurn({ ...input, onEvent });
     } finally {
       activeTurnSessions.delete(input.sessionId);
+      refreshRateLimitsAfterTurn(input.harness, accountId, usageLimited);
       if (controlled)
         await invoke("control_turn_finished", { sessionId: input.sessionId });
       scheduleIdlePark(input.harness, input.sessionId);
