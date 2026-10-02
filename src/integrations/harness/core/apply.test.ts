@@ -26,26 +26,67 @@ afterEach(() => {
 });
 
 describe("background work", () => {
-  it("tracks what a yielded turn waits on and drops it when the turn ends", () => {
+  it("tracks background processes and the yielded wait, and drops them when the turn ends", () => {
     let session = appendUser(newSession("claude", "/tmp"), "hi");
+    const build = {
+      id: "bash_1",
+      kind: "shell" as const,
+      description: "npm run build",
+      startedAt: 1_000,
+    };
     session = applyHarnessEvent(session, {
       type: "background.updated",
-      tasks: ["npm test"],
+      tasks: [build],
+      waiting: false,
     });
-    expect(session.backgroundTasks).toEqual(["npm test"]);
+    expect(session.backgroundTasks).toEqual([build]);
+    expect(session.waitingOnBackground).toBeUndefined();
+
+    session = applyHarnessEvent(session, {
+      type: "background.updated",
+      tasks: [build],
+      waiting: true,
+    });
+    expect(session.waitingOnBackground).toBe(true);
 
     session = applyHarnessEvent(session, {
       type: "background.updated",
       tasks: [],
+      waiting: false,
     });
-    expect(session.backgroundTasks).toBeUndefined();
+    expect("backgroundTasks" in session).toBe(false);
+    expect("waitingOnBackground" in session).toBe(false);
 
     session = applyHarnessEvent(session, {
       type: "background.updated",
-      tasks: ["npm run dev"],
+      tasks: [{ ...build, description: "npm run dev" }],
+      waiting: true,
     });
     session = stopStreaming(session);
     expect(session.backgroundTasks).toBeUndefined();
+    expect(session.waitingOnBackground).toBeUndefined();
+  });
+
+  it("waits on background subagents with no process left", () => {
+    let session = appendUser(newSession("claude", "/tmp"), "hi");
+    session = applyHarnessEvent(session, {
+      type: "background.updated",
+      tasks: [],
+      waiting: true,
+    });
+    expect(session.backgroundTasks).toBeUndefined();
+    expect(session.waitingOnBackground).toBe(true);
+  });
+
+  it("leaves the session as is when an empty process list clears nothing", () => {
+    const session = appendUser(newSession("claude", "/tmp"), "hi");
+    expect(
+      applyHarnessEvent(session, {
+        type: "background.updated",
+        tasks: [],
+        waiting: false,
+      }),
+    ).toBe(session);
   });
 
   it("lists running background agents and drops them when none are left or the turn ends", () => {
@@ -60,9 +101,7 @@ describe("background work", () => {
       agents: [agent],
     });
     expect(session.backgroundAgents).toEqual([agent]);
-    // Running agents alone do not mean the agent yielded; follow-ups still
-    // queue rather than steer.
-    expect(session.backgroundTasks).toBeUndefined();
+    expect(session.waitingOnBackground).toBeUndefined();
 
     session = applyHarnessEvent(session, {
       type: "background.agents",

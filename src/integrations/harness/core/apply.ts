@@ -142,13 +142,26 @@ export function applyHarnessEvent(
       return mergeTurnMetrics(session, event);
     case "tasks.updated":
       return upsertTaskList(session, event);
-    case "background.updated":
-      if (event.tasks.length === 0) {
-        if (!session.backgroundTasks) return session;
-        const { backgroundTasks: _cleared, ...rest } = session;
-        return rest;
+    case "background.updated": {
+      if (
+        event.tasks.length === 0 &&
+        !event.waiting &&
+        !session.backgroundTasks &&
+        !session.waitingOnBackground
+      ) {
+        return session;
       }
-      return { ...session, backgroundTasks: event.tasks };
+      const {
+        backgroundTasks: _cleared,
+        waitingOnBackground: _clearedWait,
+        ...rest
+      } = session;
+      return {
+        ...rest,
+        ...(event.tasks.length > 0 ? { backgroundTasks: event.tasks } : {}),
+        ...(event.waiting ? { waitingOnBackground: true as const } : {}),
+      };
+    }
     case "background.agents":
       if (event.agents.length === 0) {
         if (!session.backgroundAgents) return session;
@@ -510,6 +523,7 @@ export function stopStreaming(session: Session, endedAt = Date.now()): Session {
   const {
     backgroundTasks: _cleared,
     backgroundAgents: _clearedAgents,
+    waitingOnBackground: _clearedWait,
     ...settled
   } = settlePendingApprovals(session);
   return {

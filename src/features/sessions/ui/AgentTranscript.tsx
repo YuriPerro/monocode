@@ -178,7 +178,7 @@ type Props = {
   modelSettings?: Record<string, string>;
   pendingQuestion?: boolean;
   /** Work the agent left running when it yielded; the turn waits on it. */
-  backgroundTasks?: string[];
+  waitingOn?: string[];
   onApproval?: (requestId: number, decision: ApprovalDecision) => void;
   onAddToChat?: (text: string) => void;
   onSaveNote?: (text: string) => void | Promise<void>;
@@ -222,7 +222,7 @@ function AgentTranscriptComponent({
   model,
   modelSettings,
   pendingQuestion = false,
-  backgroundTasks,
+  waitingOn,
   onApproval,
   onAddToChat,
   onSaveNote,
@@ -732,7 +732,7 @@ function AgentTranscriptComponent({
                     ? "Waiting for answers"
                     : undefined
               }
-              background={backgroundTasks}
+              background={waitingOn}
               modelName={turnModelName}
             />
           ) : durationMs != null ? (

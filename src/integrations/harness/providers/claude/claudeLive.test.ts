@@ -204,6 +204,7 @@ function emitBackgroundBash(taskId = "b1") {
     tool_use_id: "toolu_bash",
     description: "Wait 30 seconds then print done",
     task_type: "local_bash",
+    is_backgrounded: true,
   });
   emit({
     type: "user",
@@ -253,9 +254,16 @@ function emitBashFinished(taskId = "b1") {
   });
 }
 
-function backgroundUpdates(events: HarnessEvent[]): string[][] {
+function backgroundUpdates(events: HarnessEvent[]) {
   return events.flatMap((event) =>
-    event.type === "background.updated" ? [event.tasks] : [],
+    event.type === "background.updated"
+      ? [
+          {
+            tasks: event.tasks.map((task) => task.description),
+            waiting: event.waiting,
+          },
+        ]
+      : [],
   );
 }
 
@@ -1757,7 +1765,8 @@ describe("claude background tasks", () => {
       false,
     );
     expect(backgroundUpdates(events)).toEqual([
-      ["Wait 30 seconds then print done"],
+      { tasks: ["Wait 30 seconds then print done"], waiting: false },
+      { tasks: ["Wait 30 seconds then print done"], waiting: true },
     ]);
 
     emitBashFinished();
@@ -1767,8 +1776,9 @@ describe("claude background tasks", () => {
     emitFollowUpTurn("It finished and printed done.");
     await turn;
     expect(backgroundUpdates(events)).toEqual([
-      ["Wait 30 seconds then print done"],
-      [],
+      { tasks: ["Wait 30 seconds then print done"], waiting: false },
+      { tasks: ["Wait 30 seconds then print done"], waiting: true },
+      { tasks: [], waiting: false },
     ]);
     // The command waited on sits under the message Claude left off with as
     // a row of its own, and the reply is a new message after it, once.
@@ -1860,6 +1870,126 @@ describe("claude background tasks", () => {
     expect(events.some((event) => event.type === "message.completed")).toBe(
       true,
     );
+  });
+
+  it("reports a background command from launch, keeps the time it was first seen, and drops it once Claude stops listing it", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1_000);
+    try {
+      const { events, turn } = await startTurn("s1");
+      emitBackgroundBash();
+      const build = {
+        id: "b1",
+        kind: "shell",
+        description: "Wait 30 seconds then print done",
+        startedAt: 1_000,
+      };
+      const updates = events.flatMap((event) =>
+        event.type === "background.updated" ? [event] : [],
+      );
+      expect(updates).toEqual([
+        { type: "background.updated", tasks: [build], waiting: false },
+        { type: "background.updated", tasks: [build], waiting: true },
+      ]);
+
+      clock.mockReturnValue(9_000);
+      emit({ type: "system", subtype: "background_tasks_changed", tasks: [] });
+      expect(
+        events.filter((event) => event.type === "background.updated").at(-1),
+      ).toEqual({ type: "background.updated", tasks: [], waiting: false });
+
+      emitFollowUpTurn("Done.");
+      await turn;
+      const session = events.reduce(
+        applyHarnessEvent,
+        appendUser(newSession("claude", "/repo"), "explore the codebase"),
+      );
+      expect(session.backgroundTasks).toBeUndefined();
+      expect(session.waitingOnBackground).toBeUndefined();
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it("tells a Monitor apart from a shell command", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "assistant",
+      session_id: "sess_1",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "toolu_monitor",
+            name: "Monitor",
+            input: { command: "tail -f build.log", description: "Watch build" },
+          },
+        ],
+      },
+    });
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "m1",
+      tool_use_id: "toolu_monitor",
+      description: "Watch build",
+      task_type: "local_bash",
+      is_backgrounded: true,
+    });
+    const last = events
+      .filter((event) => event.type === "background.updated")
+      .at(-1);
+    expect(last?.type === "background.updated" && last.tasks).toMatchObject([
+      { id: "m1", kind: "monitor", description: "Watch build" },
+    ]);
+    await cancelClaudeTurn("s1");
+    await turn;
+  });
+
+  it("holds back a command still in the foreground until Claude yields", async () => {
+    const { events, turn } = await startTurn("s1");
+    emit({
+      type: "system",
+      subtype: "task_started",
+      task_id: "b2",
+      description: "npm test",
+      task_type: "local_bash",
+      is_backgrounded: false,
+    });
+    expect(events.some((event) => event.type === "background.updated")).toBe(
+      false,
+    );
+    emit({
+      type: "system",
+      subtype: "task_updated",
+      task_id: "b2",
+      patch: { is_backgrounded: true },
+    });
+    expect(
+      events.filter((event) => event.type === "background.updated").at(-1),
+    ).toMatchObject({ tasks: [{ id: "b2", kind: "shell" }], waiting: false });
+    await cancelClaudeTurn("s1");
+    await turn;
+  });
+
+  it("keeps background subagents out of the process list but waits on them", async () => {
+    const { events, turn } = await startTurn("s1");
+    emitBackgroundSubagent();
+    emit({ type: "result", subtype: "success", session_id: "sess_1" });
+    const updates = events.flatMap((event) =>
+      event.type === "background.updated" ? [event] : [],
+    );
+    expect(updates).toEqual([
+      { type: "background.updated", tasks: [], waiting: true },
+    ]);
+    const session = events.reduce(
+      applyHarnessEvent,
+      appendUser(newSession("claude", "/repo"), "explore the codebase"),
+    );
+    expect(session.backgroundTasks).toBeUndefined();
+    expect(session.waitingOnBackground).toBe(true);
+    expect(session.backgroundAgents).toHaveLength(1);
+    await cancelClaudeTurn("s1");
+    await turn;
   });
 });
 

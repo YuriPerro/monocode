@@ -290,6 +290,19 @@ export type BackgroundAgent = {
   toolUses?: number;
 };
 
+/** What sort of process a background task is. */
+export type BackgroundTaskKind = "shell" | "monitor" | "other";
+
+/** A process the agent left running in the background, such as a dev server. */
+export type BackgroundTask = {
+  /** Provider task id. */
+  id: string;
+  kind: BackgroundTaskKind;
+  description: string;
+  /** Epoch ms when MonoCode first saw it. */
+  startedAt: number;
+};
+
 /** Provider/model provenance captured when a user turn is submitted. */
 export type TurnModel = {
   harness: HarnessId;
@@ -433,10 +446,15 @@ export type Session = {
   /** True while a harness turn is in flight. */
   busy?: boolean;
   /**
-   * What the live turn is waiting on after the agent yielded with work still
-   * running in the background. In-memory only.
+   * Processes the agent left running in the background. Subagents are in
+   * `backgroundAgents`. In-memory only.
    */
-  backgroundTasks?: string[];
+  backgroundTasks?: BackgroundTask[];
+  /**
+   * The agent has yielded and the live turn waits on background work, its
+   * processes or subagents. In-memory only.
+   */
+  waitingOnBackground?: true;
   /**
    * Subagents running in the background, whether or not the agent has
    * yielded. In-memory only.

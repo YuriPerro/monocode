@@ -7,6 +7,7 @@ import {
   applyClaudePromptEffortPrefix,
   applyClaudeTaskTool,
   askUserQuestionAllowInput,
+  backgroundTaskKind,
   buildClaudeSpawnArgs,
   buildClaudeUserMessage,
   contextFromResult,
@@ -970,6 +971,18 @@ describe("subagent messages", () => {
       toolUseId: "toolu_agent",
       subagentType: "explore",
     });
+  });
+
+  it("sorts background tasks into shells, monitors and the rest, leaving subagents out", () => {
+    expect(backgroundTaskKind("local_bash")).toBe("shell");
+    expect(backgroundTaskKind("local_bash", "Bash")).toBe("shell");
+    expect(backgroundTaskKind("local_bash", "Monitor")).toBe("monitor");
+    expect(backgroundTaskKind("monitor_mcp")).toBe("monitor");
+    expect(backgroundTaskKind("monitor_ws")).toBe("monitor");
+    expect(backgroundTaskKind("local_workflow")).toBe("other");
+    expect(backgroundTaskKind("")).toBe("other");
+    expect(backgroundTaskKind("local_agent")).toBeNull();
+    expect(backgroundTaskKind("remote_agent")).toBeNull();
   });
 
   it("reads what a subagent has used so far from task progress", () => {

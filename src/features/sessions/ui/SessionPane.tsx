@@ -49,6 +49,11 @@ import { sessionHasBtwThreads, supportsBtwHarness } from "../model/btw";
 import { runnerSignal } from "../model/composerRunner";
 import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { AgentTranscript } from "./AgentTranscript";
+import { BackgroundActivity } from "./BackgroundActivity";
+import {
+  backgroundActivityCount,
+  backgroundWaitDescriptions,
+} from "../model/backgroundActivity";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
 import {
@@ -328,6 +333,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
   );
   const title = sessionDisplayTitle(session.title, session.harness);
   const isEmpty = session.blocks.length === 0;
+  const backgroundActive = backgroundActivityCount(session) > 0;
   const recallLastTurnRef = useRef<(() => void) | null>(null);
   const remote = remoteSession;
   const editLastTurnSupported = !remote && canEditLastTurn(session);
@@ -687,7 +693,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
         onUsageLimitResumeAtReset(session.id, enabled)
       }
       onUsageLimitDismiss={() => onUsageLimitDismiss(session.id)}
-      backgroundAgents={session.backgroundAgents}
       onOpenFile={onOpenFile}
       busy={!!session.busy}
       runnerSignal={runnerSignal(session)}
@@ -754,6 +759,13 @@ const LocalSessionPane = memo(function LocalSessionPane({
           >
             {title}
           </span>
+          {backgroundActive ? (
+            <BackgroundActivity
+              variant="header"
+              agents={session.backgroundAgents}
+              tasks={session.backgroundTasks}
+            />
+          ) : null}
           <button
             type="button"
             title={`Close Pane (${MOD}W)`}
@@ -843,7 +855,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   model={session.model}
                   modelSettings={session.modelSettings}
                   pendingQuestion={!!session.pendingQuestion}
-                  backgroundTasks={session.backgroundTasks}
+                  waitingOn={backgroundWaitDescriptions(session)}
                   onApproval={session.worktreeRemoved ? undefined : approve}
                   onAddToChat={addSelectionToChat}
                   onSaveNote={notesEnabled ? saveNote : undefined}
@@ -932,6 +944,15 @@ const LocalSessionPane = memo(function LocalSessionPane({
                   }
                 />
               </PooledTranscript>
+              {backgroundActive && !inSplit ? (
+                <div className="pointer-events-none absolute top-2 right-3 z-30">
+                  <BackgroundActivity
+                    variant="floating"
+                    agents={session.backgroundAgents}
+                    tasks={session.backgroundTasks}
+                  />
+                </div>
+              ) : null}
               {!session.inboxAsk ? (
                 <TranscriptFind
                   blocks={session.blocks}

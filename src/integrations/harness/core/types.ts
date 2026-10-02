@@ -2,6 +2,7 @@ import type {
   AgentStepKind,
   Attachment,
   BackgroundAgent,
+  BackgroundTask,
   InterjectionMeta,
   RuntimeMode,
   TaskListItem,
@@ -28,10 +29,11 @@ export type HarnessEvent =
   /** Codex's sparse `account/rateLimits/updated` snapshot, raw. */
   | { type: "usage.rateLimits"; snapshot: Record<string, unknown> }
   /**
-   * The agent has yielded but the turn is not over: work it started is still
-   * running and will wake it again. Empty once it is back at work.
+   * Every process the agent sent to the background that is still running,
+   * and whether it has yielded with the turn waiting on background work.
+   * Replaces the previous state.
    */
-  | { type: "background.updated"; tasks: string[] }
+  | { type: "background.updated"; tasks: BackgroundTask[]; waiting: boolean }
   /**
    * Every subagent the agent sent to the background that is still running,
    * yielded or not. Replaces the previous list; empty once none are left.

@@ -2,6 +2,8 @@ import { nativeModelId } from "../../../../features/sessions/model/models";
 import { sameProviderAccountId } from "../../../../features/providers/model/providerAccounts";
 import type {
   BackgroundAgent,
+  BackgroundTask,
+  BackgroundTaskKind,
   RuntimeMode,
   TaskListItem,
   TaskListMeta,
@@ -33,6 +35,7 @@ import {
   extractAskUserQuestionTitle,
   extractExitPlanModePlan,
   inputJsonDeltaFromEvent,
+  backgroundTaskKind,
   isAgentTaskType,
   isClaudeUltracodeEffort,
   isSubagentMessage,
@@ -130,9 +133,14 @@ type LiveAgentTask = {
   toolUses?: number;
 };
 
-type BackgroundTask = {
+type LiveBackgroundTask = {
   description: string;
   toolUseId?: string;
+  /** Null for a subagent, which is reported as a background agent. */
+  kind: BackgroundTaskKind | null;
+  /** Unknown until `task_started` or `task_updated` says. */
+  backgrounded?: boolean;
+  startedAt: number;
 };
 
 type Live = {
@@ -156,7 +164,7 @@ type Live = {
    * backgrounded, monitors. Each one ends in a notification that wakes Claude
    * for another turn, so the MonoCode turn stays open until they are done.
    */
-  backgroundTasks: Map<string, BackgroundTask>;
+  backgroundTasks: Map<string, LiveBackgroundTask>;
   /** Rows shown for tasks still running when Claude yielded, by task id. */
   backgroundRows: Map<string, string>;
   /** A task finished after Claude yielded; its follow-up turn is on the way. */
@@ -1217,9 +1225,16 @@ function handleAgentLifecycle(
   const started = parseTaskStarted(rec);
   if (started) {
     if (started.ambient) return true;
+    const tool = started.toolUseId
+      ? live.toolsById.get(started.toolUseId)
+      : undefined;
     live.backgroundTasks.set(started.taskId, {
       description: started.description,
       toolUseId: started.toolUseId,
+      kind: backgroundTaskKind(started.taskType, tool?.name),
+      backgrounded: started.backgrounded,
+      startedAt:
+        live.backgroundTasks.get(started.taskId)?.startedAt ?? Date.now(),
     });
     syncBackgroundWait(live);
     if (!isAgentTaskType(started.taskType)) return true;
@@ -1275,6 +1290,9 @@ function handleAgentLifecycle(
     if (background && updated.description) {
       background.description = updated.description;
     }
+    if (background && updated.backgrounded !== undefined) {
+      background.backgrounded = updated.backgrounded;
+    }
     if (isTerminalAgentTaskStatus(updated.status)) {
       settleBackgroundRow(
         live,
@@ -1290,6 +1308,7 @@ function handleAgentLifecycle(
         updated.error,
       );
     }
+    syncBackgroundWait(live);
     return true;
   }
 
@@ -1318,7 +1337,11 @@ function handleAgentLifecycle(
   }
   for (const row of allTasks) {
     if (!live.backgroundTasks.has(row.taskId)) {
-      live.backgroundTasks.set(row.taskId, { description: row.description });
+      live.backgroundTasks.set(row.taskId, {
+        description: row.description,
+        kind: backgroundTaskKind(row.taskType),
+        startedAt: Date.now(),
+      });
     }
   }
   const liveTasks = allTasks.filter((task) => isAgentTaskType(task.taskType));
@@ -1735,19 +1758,35 @@ function clearAwaitingResume(live: Live): void {
 }
 
 /**
- * Tells the UI what the turn is waiting on once Claude has yielded with work
- * still running, and clears it when Claude picks the thread back up.
+ * Tells the UI which processes Claude sent to the background, and whether it
+ * has yielded with the turn waiting on background work. A task Claude has not
+ * said is backgrounded shows once it yields, since by then nothing else holds
+ * it.
  */
 function syncBackgroundWait(live: Live): void {
+  const running = live.activeTurn && !live.cancelled;
   const waiting =
-    live.activeTurn && live.turnResultSeen && !live.cancelled
-      ? [...live.backgroundTasks.values()].map((task) => task.description)
-      : [];
-  const key = waiting.join("\n");
+    running && live.turnResultSeen && live.backgroundTasks.size > 0;
+  const tasks: BackgroundTask[] = running
+    ? [...live.backgroundTasks].flatMap(([id, task]) =>
+        task.kind && (task.backgrounded || waiting)
+          ? [
+              {
+                id,
+                kind: task.kind,
+                description: task.description,
+                startedAt: task.startedAt,
+              },
+            ]
+          : [],
+      )
+    : [];
+  const key =
+    tasks.length > 0 || waiting ? JSON.stringify({ tasks, waiting }) : "";
   if (key === live.backgroundKey) return;
   live.backgroundKey = key;
   if (live.muteUpdates) return;
-  live.onEvent({ type: "background.updated", tasks: waiting });
+  live.onEvent({ type: "background.updated", tasks, waiting });
 }
 
 /**

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `sessions.wait` in the `/operator` app CLI waits up to 25 seconds for the turn `sessions.send` submitted to finish and returns its reply, so an agent can hold a conversation with another session, including one on a different provider, without polling `sessions.read`. `sessions.send` and `sessions.start` now return the `requestId` that identifies the submitted turn. In #610.
 - Settings → Providers can sign an account in again. Accounts with a missing or expired sign-in show a Sign in button; every account has Sign in again, Rename, Remove and Set as default in a row menu. The default account is used by projects that have not picked one in the footer, and shows a Default badge. In #622.
+- A Claude session's pane shows a toggle at its top right while subagents or processes it sent to the background are still running, with a count. It opens a list of both, each with how long it has been running; subagents also show their model, tokens and tool calls. It replaces the subagent chip beside the composer's mode picker, and processes now show from the moment they start rather than only once the agent yields.
 
 ### Changed
 
