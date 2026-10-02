@@ -34,6 +34,7 @@ import {
 } from "../features/inbox/model/ciRepairTracking";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  finalTurnReply,
   orchestrationCheckoutCwd,
   orchestrationProjectCwd,
   orchestrator,
@@ -6975,7 +6976,7 @@ function Workspace({
           );
           const reply =
             settledStatus === "completed" && settledSession
-              ? lastAssistantTextInTurn(settledSession).trim()
+              ? finalTurnReply(settledSession)
               : "";
           controlOutcome = {
             status: settledStatus,

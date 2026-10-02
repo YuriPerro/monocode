@@ -179,6 +179,12 @@ export function workerTurnPrompt(
   return `${prompt}\n\n<monocode_assignment>\nYou are a worker managed by a MonoCode lead. Work only in the checkout selected for this run. The workspace, scope and Git rules in this assignment envelope override any contradictory wording in the task text above. ${scope} If another file or shared operation is needed, report the blocker and stop so the lead can expand or create a new assignment. Do not spawn agents, create worktrees, switch branches, stage, commit, push, install dependencies or run broad formatters/generators. A task owning '.' may run explicitly requested project-wide validation or generation, but Git finalization remains the lead's responsibility after integration. Other workers may be working concurrently in separate checkouts; do not rely on their work until the lead has accepted it. Report focused checks, changed files, remaining issues and a concise final result.\n</monocode_assignment>`;
 }
 
+/** A turn's final reply, only while no tool call or other block follows the assistant's last message. */
+export function finalTurnReply(session: Session): string {
+  const last = session.blocks[session.blocks.length - 1];
+  return last?.role === "assistant" ? last.text.trim() : "";
+}
+
 const RESULT_EXCERPT = 4_000;
 
 /** Keep both ends of a long result: reports open with the verdict and close with the checks. */

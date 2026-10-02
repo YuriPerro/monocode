@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   Orchestrator,
   clipMiddle,
+  finalTurnReply,
   orchestrationPathKey,
   scopesOverlap,
   visibleUserPrompt,
@@ -12,7 +13,7 @@ import {
   type OrchestrationRun,
   shellPath,
 } from "./orchestration";
-import { newSession } from "../../sessions/model/session";
+import { newSession, type Block } from "../../sessions/model/session";
 import type { OrchestrationProposal } from "./orchestrationPlan";
 import { normalizeOrchestrationRun } from "./orchestrationState";
 import { previewFromToolPart } from "../../../integrations/harness/providers/opencode/opencodeProtocol";
@@ -155,6 +156,40 @@ describe("result excerpts", () => {
       /\n\n\[\.\.\. (\d+) characters cut \.\.\.\]\n\n/,
     )!;
     expect(clipped.length - marker.length + Number(cut)).toBe(report.length);
+  });
+});
+
+describe("final turn reply", () => {
+  const turn = (...blocks: [Block["role"], string][]) => ({
+    ...newSession("claude", "/repo"),
+    blocks: blocks.map(([role, text], index) => ({
+      id: `block-${index}`,
+      role,
+      text,
+    })),
+  });
+  it("takes the assistant's last message when it closes the turn", () => {
+    expect(
+      finalTurnReply(
+        turn(
+          ["user", "Fix the bug."],
+          ["assistant", "I'll read src/a.ts first."],
+          ["tool", "Read src/a.ts"],
+          ["assistant", "Report: fixed, tests pass\n"],
+        ),
+      ),
+    ).toBe("Report: fixed, tests pass");
+  });
+  it("finds no reply when a tool call follows the assistant's last message", () => {
+    expect(
+      finalTurnReply(
+        turn(
+          ["user", "Fix the bug."],
+          ["assistant", "Now running the tests."],
+          ["tool", "bun test"],
+        ),
+      ),
+    ).toBe("");
   });
 });
 
