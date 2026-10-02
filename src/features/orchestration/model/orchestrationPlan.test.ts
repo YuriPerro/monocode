@@ -57,6 +57,16 @@ describe("orchestration proposals", () => {
     expect(result.response).toBeUndefined();
   });
 
+  it("accepts a read-only assignment without file scopes", () => {
+    const result = completeOrchestrationProposal(
+      draft,
+      JSON.stringify({ ...payload, tasks: [{ ...task, files: [] }] }),
+    );
+    expect(result.status).toBe("ready");
+    expect(result.tasks[0].files).toEqual([]);
+    expect(proposalBlock("card", result).text).toContain("Files: read-only");
+  });
+
   it("never guesses ambiguous harnesses or replaces an explicit unavailable choice", () => {
     const settings = {
       ...draft.settings,
@@ -317,6 +327,49 @@ describe("orchestration proposals", () => {
     expect(sanitizeSessionForPersist(session).blocks[0].orchestration).toEqual(
       proposal,
     );
+  });
+  it("answers a question without workers, a repair or a run, and keeps the answer on reload", async () => {
+    const repair = vi.fn();
+    const answered = await completeOrRepairOrchestrationProposal(
+      draft,
+      `<monocode_proposal>${JSON.stringify({
+        title: "scopesOverlap",
+        answer: "It reports whether two scope lists share a path.",
+        tasks: [],
+      })}</monocode_proposal>`,
+      repair,
+      () => true,
+    );
+    expect(answered).toMatchObject({
+      status: "answered",
+      answer: "It reports whether two scope lists share a path.",
+      tasks: [],
+    });
+    expect(repair).not.toHaveBeenCalled();
+    const block = proposalBlock("proposal", answered);
+    expect(block.text).toContain("share a path");
+    const session = { ...newSession("claude", "/repo"), blocks: [block] };
+    expect(sanitizeSessionForPersist(session).blocks[0].orchestration).toEqual(
+      answered,
+    );
+  });
+  it("repairs a reply that has neither an answer nor valid tasks", async () => {
+    const repair = vi.fn(async () => "Still invalid");
+    const result = await completeOrRepairOrchestrationProposal(
+      draft,
+      JSON.stringify({ title: "Empty", summary: "Nothing", tasks: [] }),
+      repair,
+      () => true,
+    );
+    expect(repair).toHaveBeenCalledOnce();
+    expect(repair.mock.calls[0][0]).toContain("Provide 1 to 40 assignments");
+    expect(result.status).toBe("invalid");
+    expect(
+      completeOrchestrationProposal(
+        draft,
+        JSON.stringify({ title: "Blank", answer: " ", tasks: [] }),
+      ).status,
+    ).toBe("invalid");
   });
   it("makes interrupted planning non-executable on stop and reload", () => {
     const session = {

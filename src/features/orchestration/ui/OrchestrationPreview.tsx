@@ -475,6 +475,7 @@ export function OrchestrationPreview({
   const editable =
     proposal.status === "ready" && !run && !pending && !busy && !!actions;
   const planning = proposal.status === "planning";
+  const answered = proposal.status === "answered";
   const starting = pending || proposal.status === "starting";
   const visible = showAll ? proposal.tasks : proposal.tasks.slice(0, 3);
   const perform = async (fn: () => Promise<void>) => {
@@ -587,6 +588,11 @@ export function OrchestrationPreview({
             : "Checking available harnesses and models…"}
         </p>
       )}
+      {answered && (
+        <p className="whitespace-pre-wrap border-t border-stroke px-3 py-2.5 text-[12px] leading-5 text-content/70">
+          {proposal.answer}
+        </p>
+      )}
       {!!proposal.tasks.length && (
         <ul className="border-t border-stroke py-1">
           {visible.map((task) => {
@@ -625,6 +631,11 @@ export function OrchestrationPreview({
                     <span className="truncate text-[12px]" title={task.title}>
                       {task.title}
                     </span>
+                    {!task.files.length && (
+                      <span className="shrink-0 rounded bg-content/8 px-1.5 text-[11px] leading-4 text-content/50">
+                        Read-only
+                      </span>
+                    )}
                   </button>
                   <div className="max-w-[60%] min-w-0">
                     {editable ? (
@@ -727,7 +738,7 @@ export function OrchestrationPreview({
           {error ?? proposal.error}
         </p>
       )}
-      {!planning && (
+      {!planning && !answered && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-stroke px-3 py-2 text-[11px] text-content/45">
           <div className="flex items-center gap-1.5">
             {editable ? (

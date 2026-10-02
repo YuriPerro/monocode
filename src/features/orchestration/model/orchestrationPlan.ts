@@ -30,10 +30,18 @@ export type OrchestrationProposal = {
   request: string;
   author: OrchestrationChoice;
   settings: OrchestrationSettings;
-  status: "planning" | "ready" | "invalid" | "starting" | "approved";
+  status:
+    | "planning"
+    | "ready"
+    | "invalid"
+    | "starting"
+    | "approved"
+    | "answered";
   title: string;
   summary: string;
   tasks: ProposedTask[];
+  /** The lead's reply when the request needed no workers. */
+  answer?: string;
   error?: string;
   /** Kept only for invalid cards so a retry can repair the response directly. */
   response?: string;
@@ -196,10 +204,6 @@ export function validateProposedTasks(
         ),
       ),
     ];
-    if (!files.length)
-      throw new Error(
-        `Assignment "${id}" has no file scopes. Use project-relative paths, or '.' for the whole project`,
-      );
     return {
       id,
       title: required(task.title, "a task title", 160),
@@ -244,10 +248,11 @@ export function orchestrationPlanningPrompt(
     "Prepare an orchestration proposal for the user to review in MonoCode. Investigate and plan only: do not edit files, start workers, or invoke the MonoCode control CLI. No execution is authorized until the user confirms the assignment card.",
     "You are the orchestrator: the user selected you in the composer model picker. Decide the task breakdown and choose each worker's harness and model from the available catalog below. Do not ask the user to assemble a team. They can change your choices in the card before confirming.",
     "Keep planning efficient: inspect only what is needed to understand the request and relevant project conventions. Use the fewest useful tasks, with clear deliverables and acceptance checks. Do not create agents for trivial steps or duplicate investigation. Prefer a fast, economical model for straightforward work and a more capable model when complexity warrants it; do not invent model capabilities or prices. Reuse a suitable harness/model across tasks when that is sufficient. Explain your overall division of work briefly in the summary.",
-    'Use only exact harness/model pairs from the catalog. Give each task self-contained instructions and project-relative write scopes; directories own their descendants. Parallelize independent work with disjoint files. Serialize shared-file edits with dependencies and avoid concurrent repository-wide commands. Assign project-wide generation or final combined validation to a task with files ["."]. Workers must not commit, push, switch branches, or write outside the selected checkout. If the user requested Git or cross-checkout finalization, do not create a worker for it: the lead performs only those explicitly authorized final operations after every worker is reviewed, integrated, and the orchestration run is finished. All workers use app-managed isolated checkouts; do not ask them to create or switch worktrees.',
-    `The exact checkout root is ${JSON.stringify(cwd)}. Every files entry must be "." or a path relative to this root. For example, a discovered absolute path beneath this root must be returned without the root prefix. Never use an absolute path or '..'.`,
+    'Use only exact harness/model pairs from the catalog. Give each task self-contained instructions and project-relative write scopes; directories own their descendants. Parallelize independent work with disjoint files. Serialize shared-file edits with dependencies and avoid concurrent repository-wide commands. Investigation or review that edits nothing is read-only: give it files [], so it never waits for or blocks other workers, and any write stops it. Reserve files ["."] for project-wide generation or final combined validation. Workers must not commit, push, switch branches, or write outside the selected checkout. If the user requested Git or cross-checkout finalization, do not create a worker for it: the lead performs only those explicitly authorized final operations after every worker is reviewed, integrated, and the orchestration run is finished. All workers use app-managed isolated checkouts; do not ask them to create or switch worktrees.',
+    `The exact checkout root is ${JSON.stringify(cwd)}. Every files entry must be "." or a path relative to this root; an empty list means read-only. For example, a discovered absolute path beneath this root must be returned without the root prefix. Never use an absolute path or '..'.`,
     "Return your final proposal as one JSON object inside <monocode_proposal>...</monocode_proposal>. The app renders it as an editable card, so do not ask for approval in prose. No Markdown inside the JSON fields. Tasks may reference any task ID; the graph must be acyclic.",
     'Schema: {"title":"Short project title","summary":"What you will do and how the work fits together","tasks":[{"id":"task-1","title":"Short task title","prompt":"Self-contained instructions, constraints and checks","harness":"exact harness ID","model":"exact model ID","files":["src/feature"],"dependsOn":[]}]}',
+    'Default to not delegating. When the request is a question or an analysis you can resolve yourself by reading the project, answer it directly and create no workers: return {"title":"Short title","answer":"Your complete answer in plain text","tasks":[]}. Create tasks only when the request needs project edits, or when independent parts gain from parallel workers or a large investigation would return a short result. Never answer instead of doing requested edits; the user can still ask you to delegate.',
     `Parallel worker limit: ${settings.maxWorkers}`,
     `<available_models>\n${JSON.stringify(settings.choices)}\n</available_models>`,
     `<user_request>\n${request}\n</user_request>`,
@@ -267,6 +272,21 @@ export function completeOrchestrationProposal(
     const fenced = response.match(/```(?:json)?\s*([\s\S]*?)```/);
     const raw = (tagged?.[1] ?? fenced?.[1] ?? response).trim();
     const input = record(JSON.parse(raw));
+    if (
+      Array.isArray(input.tasks) &&
+      !input.tasks.length &&
+      input.answer !== undefined
+    )
+      return {
+        ...draft,
+        title: required(input.title, "a proposal title", 160),
+        summary: "",
+        answer: required(input.answer, "an answer"),
+        tasks: [],
+        status: "answered",
+        error: undefined,
+        response: undefined,
+      };
     return {
       ...draft,
       title: required(input.title, "a proposal title", 160),
@@ -321,12 +341,14 @@ export async function completeOrRepairOrchestrationProposal(
 }
 
 export function proposalMarkdown(proposal: OrchestrationProposal): string {
+  if (proposal.status === "answered")
+    return `# ${proposal.title}\n\n${proposal.answer ?? ""}`;
   return [
     `# ${proposal.title}`,
     proposal.summary,
     ...proposal.tasks.map(
       (task) =>
-        `## ${task.title}\n${task.harness} · ${proposal.settings.choices.find((choice) => choice.harness === task.harness && choice.model === task.model)?.name ?? task.model}\n${task.prompt}\nFiles: ${task.files.join(", ")}\nDepends on: ${task.dependsOn.join(", ") || "None"}`,
+        `## ${task.title}\n${task.harness} · ${proposal.settings.choices.find((choice) => choice.harness === task.harness && choice.model === task.model)?.name ?? task.model}\n${task.prompt}\nFiles: ${task.files.join(", ") || "read-only"}\nDepends on: ${task.dependsOn.join(", ") || "None"}`,
     ),
   ].join("\n\n");
 }
