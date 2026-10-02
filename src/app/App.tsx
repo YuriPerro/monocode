@@ -6129,7 +6129,7 @@ function Workspace({
             : // The agent has yielded and only background work is left, which
               // may never end (a dev server). Queuing would park the message
               // behind it, so hand it to the agent now.
-              current.backgroundTasks?.length
+              current.waitingOnBackground
               ? "steer"
               : (options?.followUpBehavior ?? loadFollowUpBehavior());
         if (followUpBehavior === "queue") {

@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  BackgroundTaskKind,
   RuntimeMode,
   TaskListItem,
   ToolPreview,
@@ -608,6 +609,22 @@ export function isSubagentMessage(rec: Record<string, unknown>): boolean {
 export function isAgentTaskType(taskType: string | undefined): boolean {
   const key = (taskType ?? "").toLowerCase();
   return key === "local_agent" || key === "remote_agent";
+}
+
+/**
+ * What a non-subagent task is, from its `task_type` and the tool that started
+ * it. Monitor runs as `local_bash` too; only its tool tells it apart. Null for
+ * subagents, which are reported as background agents instead.
+ */
+export function backgroundTaskKind(
+  taskType: string | undefined,
+  toolName?: string,
+): BackgroundTaskKind | null {
+  if (isAgentTaskType(taskType)) return null;
+  const key = (taskType ?? "").toLowerCase();
+  if (key === "local_bash") return toolName === "Monitor" ? "monitor" : "shell";
+  if (key.startsWith("monitor")) return "monitor";
+  return "other";
 }
 
 export type ClaudeAgentTaskStarted = {
