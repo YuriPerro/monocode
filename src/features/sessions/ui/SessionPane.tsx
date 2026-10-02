@@ -907,6 +907,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
                     remote ||
                     session.inboxAsk ||
                     session.worktreeRemoved ||
+                    orchestrator.isolatedWorker(session.id) ||
                     draftBlock ? undefined : (
                       <SessionReview
                         sessionId={session.id}

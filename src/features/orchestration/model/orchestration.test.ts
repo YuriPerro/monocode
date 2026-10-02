@@ -181,6 +181,28 @@ describe("local orchestration", () => {
     expect(f.store.save).not.toHaveBeenCalled();
   });
 
+  it("marks only isolated workers for checkpoint capture", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src"]);
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("running"));
+    const task = f.tasks()[0];
+    expect(f.manager.isolatedWorker(task.sessionId)).toBe(true);
+    expect(f.manager.isolatedWorker("lead")).toBe(false);
+    expect(f.manager.isolatedWorker("other")).toBe(false);
+
+    const legacy = setup();
+    const saved = structuredClone(f.saved.get("lead")!);
+    legacy.saved.set("lead", {
+      ...saved,
+      version: 1,
+      tasks: saved.tasks.map(({ workspacePolicy: _, ...entry }) => entry),
+    });
+    await legacy.manager.hydrate("lead");
+    expect(legacy.manager.forSession(task.sessionId)).toBeDefined();
+    expect(legacy.manager.isolatedWorker(task.sessionId)).toBe(false);
+  });
+
   const proposal = (): OrchestrationProposal => ({
     version: 1,
     leadId: "lead",

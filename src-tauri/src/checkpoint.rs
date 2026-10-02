@@ -2065,6 +2065,60 @@ mod tests {
     }
 
     #[test]
+    fn read_only_isolated_worker_integrates_without_writing() {
+        let source = tmp("apply-empty-source");
+        let target = tmp("apply-empty-target");
+        if !init_git_commit(&source.0, &[("a.txt", "head\n")]) {
+            return;
+        }
+        let source_path = source.0.to_string_lossy().into_owned();
+        let target_path = target.0.to_string_lossy().into_owned();
+        if !git(&source.0, &["clone", &source_path, &target_path]) {
+            return;
+        }
+        let (_root, store) = store();
+        store.ensure("worker", &source_path).unwrap();
+
+        let applied = store.apply("worker", &source_path, &target_path).unwrap();
+        assert!(applied.files.is_empty());
+        assert_eq!(applied.already_applied, 0);
+        assert_eq!(
+            std::fs::read_to_string(target.0.join("a.txt")).unwrap(),
+            "head\n"
+        );
+        assert!(store.cleanup_safe("worker", &source_path).unwrap());
+    }
+
+    #[test]
+    fn isolated_worker_without_checkpoint_refuses_integration() {
+        let source = tmp("apply-missing-source");
+        let target = tmp("apply-missing-target");
+        if !init_git_commit(&source.0, &[("a.txt", "head\n")]) {
+            return;
+        }
+        let source_path = source.0.to_string_lossy().into_owned();
+        let target_path = target.0.to_string_lossy().into_owned();
+        if !git(&source.0, &["clone", &source_path, &target_path]) {
+            return;
+        }
+        std::fs::write(source.0.join("a.txt"), "worker\n").unwrap();
+        let (_root, store) = store();
+
+        let err = store
+            .apply("worker", &source_path, &target_path)
+            .unwrap_err();
+        assert!(err.contains("no recoverable change checkpoint"));
+        assert_eq!(
+            std::fs::read_to_string(source.0.join("a.txt")).unwrap(),
+            "worker\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.0.join("a.txt")).unwrap(),
+            "head\n"
+        );
+    }
+
+    #[test]
     fn rejects_invalid_session_id() {
         let err = validate_id("../x", "session").unwrap_err();
         assert!(err.contains("Invalid"));
