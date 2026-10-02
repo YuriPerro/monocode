@@ -11,6 +11,7 @@ import {
 import {
   getCachedRateLimits,
   loadRateLimits,
+  refreshStaleRateLimits,
   setCachedRateLimits,
   useCachedRateLimits,
 } from "../../features/providers/model/rateLimitsCache";
@@ -127,14 +128,37 @@ export function UsageFooter({
     [],
   );
 
-  // New accounts load once. Returning from Settings or focusing the window
-  // reads the shared snapshot without starting another provider request.
   useEffect(() => {
     if (wantClaude && claudeAccountAvailable)
       void loadRateLimits("claude", claudeAccountId);
     if (wantCodex && codexAccountAvailable)
       void loadRateLimits("codex", codexAccountId);
     if (wantOpencode) void loadRateLimits("opencode");
+  }, [
+    claudeAccountAvailable,
+    claudeAccountId,
+    codexAccountAvailable,
+    codexAccountId,
+    wantClaude,
+    wantCodex,
+    wantOpencode,
+  ]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      if (wantClaude && claudeAccountAvailable)
+        void refreshStaleRateLimits("claude", claudeAccountId);
+      if (wantCodex && codexAccountAvailable)
+        void refreshStaleRateLimits("codex", codexAccountId);
+      if (wantOpencode) void refreshStaleRateLimits("opencode");
+    };
+    document.addEventListener("visibilitychange", onFocus);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      document.removeEventListener("visibilitychange", onFocus);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [
     claudeAccountAvailable,
     claudeAccountId,

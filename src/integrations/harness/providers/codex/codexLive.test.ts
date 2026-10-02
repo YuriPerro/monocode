@@ -1626,6 +1626,24 @@ describe("codex live turn sequence", () => {
     expect(settled).toBe(true);
   });
 
+  it("passes live rate-limit updates on as usage events", async () => {
+    const { events, turn } = await startTurn("codex-live");
+    const rateLimits = {
+      limitId: "codex",
+      primary: { usedPercent: 41, windowDurationMins: 300, resetsAt: 1_900 },
+      secondary: null,
+    };
+
+    notify("account/rateLimits/updated", { rateLimits });
+    notify("turn/completed", { turn: { id: "turn_1", status: "completed" } });
+    await turn;
+
+    expect(events).toContainEqual({
+      type: "usage.rateLimits",
+      snapshot: rateLimits,
+    });
+  });
+
   it("keeps plan turns read-only without surfacing approval prompts", async () => {
     const { events, turn } = await startTurn("codex-live", {
       runtimeMode: "auto",

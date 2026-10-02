@@ -28,7 +28,10 @@ import type {
   ProviderRateLimits,
   RateLimitProvider,
 } from "../../features/providers/model/rateLimits";
-import { clearCachedRateLimits } from "../../features/providers/model/rateLimitsCache";
+import {
+  clearCachedRateLimits,
+  setCachedRateLimits,
+} from "../../features/providers/model/rateLimitsCache";
 import { UsageFooter } from "./UsageFooter";
 
 let container: HTMLDivElement;
@@ -209,5 +212,88 @@ describe("UsageFooter provider authentication", () => {
     await vi.waitFor(() =>
       expect(auth.loginHarness).toHaveBeenCalledWith("codex"),
     );
+  });
+});
+
+describe("UsageFooter focus refresh", () => {
+  const MINUTE = 60_000;
+
+  function usage(
+    provider: RateLimitProvider,
+    usedPercent: number,
+    ageMs = 0,
+  ): ProviderRateLimits {
+    return {
+      ...connectedLimits(provider),
+      session: {
+        usedPercent,
+        windowMinutes: 300,
+        resetsAt: Date.now() + 60 * MINUTE,
+      },
+      updatedAt: Date.now() - ageMs,
+    };
+  }
+
+  async function focusWindow() {
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  }
+
+  it("refetches each shown account once when its snapshot is stale", async () => {
+    setCachedRateLimits("claude", "default", usage("claude", 10, 6 * MINUTE));
+    setCachedRateLimits("codex", "default", usage("codex", 20, 6 * MINUTE));
+    rateLimitsFetch.fetchClaudeRateLimits.mockResolvedValue(usage("claude", 47));
+    rateLimitsFetch.fetchCodexRateLimits.mockResolvedValue(usage("codex", 62));
+    await act(async () =>
+      root.render(
+        createElement(UsageFooter, { providers: ["claude", "codex"] }),
+      ),
+    );
+    expect(container.textContent).toContain("10%");
+    expect(rateLimitsFetch.fetchClaudeRateLimits).not.toHaveBeenCalled();
+
+    await focusWindow();
+
+    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(1);
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("47%");
+    expect(container.textContent).toContain("62%");
+
+    await focusWindow();
+    expect(rateLimitsFetch.fetchClaudeRateLimits).toHaveBeenCalledTimes(1);
+    expect(rateLimitsFetch.fetchCodexRateLimits).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not refetch a recent snapshot on focus", async () => {
+    setCachedRateLimits("claude", "default", usage("claude", 10, 2 * MINUTE));
+    await act(async () =>
+      root.render(createElement(UsageFooter, { providers: ["claude"] })),
+    );
+
+    await focusWindow();
+
+    expect(rateLimitsFetch.fetchClaudeRateLimits).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch a removed account on focus", async () => {
+    setCachedRateLimits(
+      "claude",
+      "account-gone",
+      usage("claude", 10, 6 * MINUTE),
+    );
+    await act(async () =>
+      root.render(
+        createElement(UsageFooter, {
+          providers: ["claude"],
+          session: { harness: "claude", providerAccountId: "account-gone" },
+        }),
+      ),
+    );
+
+    await focusWindow();
+
+    expect(rateLimitsFetch.fetchClaudeRateLimits).not.toHaveBeenCalled();
   });
 });

@@ -824,7 +824,10 @@ function handleNotification(
   }
   const finish = () => {
     settleSubagentRows(live, rec);
-    if (mapped.rateLimits) noteRateLimits(live, mapped.rateLimits);
+    if (mapped.rateLimits) {
+      noteRateLimits(live, mapped.rateLimits);
+      live.onEvent({ type: "usage.rateLimits", snapshot: mapped.rateLimits });
+    }
     if (mapped.usageLimited) live.usageLimited = true;
     if (mapped.activeTurnId !== undefined) {
       live.activeTurnId = mapped.activeTurnId;
