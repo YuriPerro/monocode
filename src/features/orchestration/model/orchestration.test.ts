@@ -5,6 +5,7 @@ import {
   orchestrationPathKey,
   scopesOverlap,
   visibleUserPrompt,
+  withPrerequisiteResults,
   workerTurnPrompt,
   type ControlOutcome,
   type OrchestrationHost,
@@ -154,6 +155,40 @@ describe("result excerpts", () => {
       /\n\n\[\.\.\. (\d+) characters cut \.\.\.\]\n\n/,
     )!;
     expect(clipped.length - marker.length + Number(cut)).toBe(report.length);
+  });
+});
+
+describe("prerequisite results", () => {
+  it("appends each prerequisite report in a delimited block", () => {
+    const sent = withPrerequisiteResults("Build the UI.", [
+      { id: "t1", title: "Types", result: "Types ready in src/types.ts" },
+      { id: "t2", title: "API", result: "Endpoint added" },
+    ]);
+    expect(sent).toMatch(
+      /^Build the UI\.\n\n<prerequisite_results>\n[\s\S]*<\/prerequisite_results>$/,
+    );
+    expect(sent).toContain("t1 — Types\nTypes ready in src/types.ts");
+    expect(sent).toContain("t2 — API\nEndpoint added");
+  });
+  it("leaves the prompt alone when no prerequisite has a result", () => {
+    expect(
+      withPrerequisiteResults("Build the UI.", [
+        { id: "t1", title: "Types", result: "  " },
+      ]),
+    ).toBe("Build the UI.");
+  });
+  it("clips a long prerequisite report at both ends", () => {
+    const sent = withPrerequisiteResults("Build the UI.", [
+      {
+        id: "t1",
+        title: "Types",
+        result: `Verdict: ready${"-".repeat(10_000)}All checks pass`,
+      },
+    ]);
+    expect(sent).toContain("Verdict: ready");
+    expect(sent).toContain("characters cut");
+    expect(sent).toContain("All checks pass");
+    expect(sent.length).toBeLessThan(5_000);
   });
 });
 
@@ -729,6 +764,41 @@ describe("local orchestration", () => {
     expect(f.tasks()[1].status).toBe("queued");
     await f.call("review", { taskId: upstream.id });
     await vi.waitFor(() => expect(f.tasks()[1].status).toBe("running"));
+  });
+  it("hands a dependent worker the accepted prerequisite's final reply", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src/types.ts"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const upstream = f.tasks()[0];
+    await f.delegate(["src/ui"], { dependsOn: [upstream.id] });
+    f.completions.get(upstream.sessionId)!({
+      status: "completed",
+      text: "Reading the types.\nTypes ready",
+      reply: "Types ready",
+    });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await f.call("review", { taskId: upstream.id });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    const sent = vi.mocked(f.host.submit).mock.calls[1][1];
+    expect(sent).toContain("<prerequisite_results>\nFinal reports");
+    expect(sent).toContain(`${upstream.id} — Task\nTypes ready\n`);
+    expect(sent).not.toContain("Reading the types");
+  });
+  it("sends a dependent worker no prerequisite block when the upstream left no result", async () => {
+    const f = setup();
+    await f.start();
+    await f.delegate(["src/types.ts"]);
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(1));
+    const upstream = f.tasks()[0];
+    await f.delegate(["src/ui"], { dependsOn: [upstream.id] });
+    f.completions.get(upstream.sessionId)!({ status: "completed", text: "" });
+    await vi.waitFor(() => expect(f.tasks()[0].status).toBe("completed"));
+    await f.call("review", { taskId: upstream.id });
+    await vi.waitFor(() => expect(f.host.submit).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(f.host.submit).mock.calls[1][1]).not.toContain(
+      "prerequisite_results",
+    );
   });
   it("deduplicates command retries and rejects foreign tasks or unapproved harnesses", async () => {
     const f = setup();

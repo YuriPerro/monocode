@@ -190,6 +190,21 @@ export function clipMiddle(text: string, limit: number): string {
   return `${text.slice(0, head)}${marker(text.length - room)}${text.slice(text.length - (room - head))}`;
 }
 
+/** Hand a dependent task the accepted reports it builds on, so it need not reinvestigate. */
+export function withPrerequisiteResults(
+  prompt: string,
+  prerequisites: Pick<OrchestrationTask, "id" | "title" | "result">[],
+): string {
+  const reports = prerequisites
+    .filter((task) => task.result.trim())
+    .map(
+      (task) =>
+        `${task.id} — ${task.title}\n${clipMiddle(task.result.trim(), RESULT_EXCERPT)}`,
+    );
+  if (!reports.length) return prompt;
+  return `${prompt}\n\n<prerequisite_results>\nFinal reports of the tasks this assignment depends on, accepted by the lead. Use them as context; the assignment above still defines your work.\n\n${reports.join("\n\n")}\n</prerequisite_results>`;
+}
+
 /** Task text a person should see: the assignment envelope stays in the send. */
 export function visibleUserPrompt(text: string): string {
   return text.replace(ASSIGNMENT_BLOCK, "").trimEnd();
@@ -1600,7 +1615,14 @@ export class Orchestrator {
             )
               continue;
             const prompt = workerTurnPrompt(
-              task.recoveryPrompt ?? task.prompt,
+              task.recoveryPrompt ??
+                withPrerequisiteResults(
+                  task.prompt,
+                  preparedRun.tasks.filter(
+                    (entry) =>
+                      task.dependsOn.includes(entry.id) && entry.accepted,
+                  ),
+                ),
               task.files,
               prepared.scratchDir,
             );
