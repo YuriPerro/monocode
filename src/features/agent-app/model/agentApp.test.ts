@@ -197,6 +197,7 @@ describe("agent app commands", () => {
           id: "u2",
           role: "user",
           text: "What are you doing?",
+          startedAt: 2,
           appRequestId: "app-lead-send-1",
         },
       ];
@@ -234,10 +235,11 @@ describe("agent app commands", () => {
         id: "u1",
         role: "user",
         text: "First question",
+        startedAt: 1,
         appRequestId: "app-lead-send-1",
       },
       { id: "a1", role: "assistant", text: "First answer" },
-      { id: "u2", role: "user", text: "Queued follow-up" },
+      { id: "u2", role: "user", text: "Queued follow-up", startedAt: 2 },
     ];
     host.session = vi.fn(async (id) => (id === "other" ? other : null));
     expect(
@@ -253,6 +255,98 @@ describe("agent app commands", () => {
       busy: true,
       turn: { turnId: "u1", assistant: { text: "First answer" } },
     });
+  });
+
+  it("settles a sent turn once a later internal turn keeps the session busy", async () => {
+    const { source, host } = fixture();
+    const other = {
+      ...newSession("codex", source.cwd),
+      id: "other",
+      busy: true,
+    };
+    other.blocks = [
+      {
+        id: "u1",
+        role: "user",
+        text: "First question",
+        startedAt: 1,
+        appRequestId: "app-lead-send-1",
+      },
+      { id: "a1", role: "assistant", text: "First answer" },
+      {
+        id: "u2",
+        role: "user",
+        text: "Background check",
+        startedAt: 2,
+        internal: true,
+      },
+    ];
+    host.session = vi.fn(async (id) => (id === "other" ? other : null));
+    expect(
+      await handleAgentApp(
+        source,
+        "wait-internal",
+        "sessions.wait",
+        { sessionId: "other", sentRequestId: "send-1", timeoutSeconds: 1 },
+        host,
+      ),
+    ).toMatchObject({
+      settled: true,
+      busy: true,
+      turn: { turnId: "u1", assistant: { text: "First answer" } },
+    });
+  });
+
+  it("follows a sent turn through a mid-turn follow-up to its final answer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { source, host } = fixture();
+      const other = {
+        ...newSession("codex", source.cwd),
+        id: "other",
+        busy: true,
+      };
+      other.blocks = [
+        {
+          id: "u1",
+          role: "user",
+          text: "Review the branch",
+          startedAt: 1,
+          appRequestId: "app-lead-send-1",
+        },
+        { id: "a1", role: "assistant", text: "Reading the diff." },
+        { id: "u2", role: "user", text: "Also check the tests" },
+      ];
+      host.session = vi.fn(async (id) => (id === "other" ? other : null));
+      let result: unknown;
+      const waiting = handleAgentApp(
+        source,
+        "wait-steer",
+        "sessions.wait",
+        { sessionId: "other", sentRequestId: "send-1", timeoutSeconds: 5 },
+        host,
+      ).then((value) => (result = value));
+      await vi.advanceTimersByTimeAsync(600);
+      expect(result).toBeUndefined();
+      other.busy = false;
+      other.blocks = [
+        ...other.blocks,
+        { id: "a2", role: "assistant", text: "Branch and tests look good." },
+      ];
+      await vi.advanceTimersByTimeAsync(600);
+      await waiting;
+      expect(result).toMatchObject({
+        settled: true,
+        turn: {
+          turnId: "u1",
+          user: { text: "Review the branch" },
+          assistant: { text: "Branch and tests look good." },
+          earlierAssistantMessages: 1,
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("lets a session run only one wait at a time", async () => {

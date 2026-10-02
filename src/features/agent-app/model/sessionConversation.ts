@@ -24,17 +24,16 @@ function messageCap(maxChars: number | undefined) {
   return cap;
 }
 
+function isReply(block: Block) {
+  return block.role === "assistant" && !block.internal && !!block.text.trim();
+}
+
 function conversationExchanges(session: Session): Exchange[] {
   const exchanges: Exchange[] = [];
   for (const block of session.blocks) {
     if (block.role === "user" && !block.internal && !block.draft) {
       exchanges.push({ user: block, assistants: [] });
-    } else if (
-      block.role === "assistant" &&
-      !block.internal &&
-      block.text.trim() &&
-      exchanges.length > 0
-    ) {
+    } else if (isReply(block) && exchanges.length > 0) {
       exchanges[exchanges.length - 1].assistants.push(block);
     }
   }
@@ -81,16 +80,46 @@ export function sessionConversationPage(
   };
 }
 
-/** The exchange an app request submitted, or the newest one without a request ID. */
+/**
+ * The run an app request submitted, including follow-ups steered into it, and
+ * whether it ended. A run ends when the next submitted turn starts or the
+ * session goes idle. Without a request ID, the newest exchange.
+ */
 export function sessionConversationTurn(
   session: Session,
   appRequestId?: string,
   maxChars?: number,
 ) {
   const cap = messageCap(maxChars);
-  const exchanges = conversationExchanges(session);
-  const exchange = appRequestId
-    ? exchanges.find(({ user }) => user.appRequestId === appRequestId)
-    : exchanges[exchanges.length - 1];
-  return exchange ? conversationTurn(exchange, cap) : null;
+  if (!appRequestId) {
+    const exchanges = conversationExchanges(session);
+    const latest = exchanges[exchanges.length - 1];
+    return {
+      turn: latest ? conversationTurn(latest, cap) : null,
+      settled: !session.busy,
+    };
+  }
+  const { blocks } = session;
+  const start = blocks.findIndex(
+    (block) =>
+      block.role === "user" &&
+      !block.draft &&
+      block.appRequestId === appRequestId,
+  );
+  if (start < 0) return { turn: null, settled: false };
+  const next = blocks.findIndex(
+    (block, index) =>
+      index > start &&
+      block.role === "user" &&
+      !block.draft &&
+      block.startedAt != null,
+  );
+  const run = blocks.slice(start + 1, next < 0 ? undefined : next);
+  return {
+    turn: conversationTurn(
+      { user: blocks[start], assistants: run.filter(isReply) },
+      cap,
+    ),
+    settled: next >= 0 || !session.busy,
+  };
 }
